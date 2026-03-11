@@ -1,0 +1,133 @@
+# Vue、React build output
+dist/
+build/
+node_modules/
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+.flattened-pom.xml
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# Logs
+logs
+*.log
+
+# OS Specific Files
+.DS_Store
+
+# Editor Directories and Files
+.vscode/
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Dependency Directories
+node_modules
+dist-ssr
+
+# Lock Files
+package-lock.json
+yarn.lock
+
+# Local Environment Files
+*.local
+
+# Dataset Files
+datasets/
+
+# Pycache
+__pycache__/
+
+# Model Files
+weights/
+
+# *.exe Files
+*.exe
+**/*.exe
+
+# *.pt Files
+*.pt
+**/*.pt
+checkpoints
+checkpoints_1
+checkpoints_2
+
+# *.log Files
+*.log
+**/*.log
+
+# *.png
+*.png
+**/*.png
+
+# 预训练模型
+clap-htsat-unfused
+
+# csv文件
+*.csv
+**/*.csv
+
+# md文件
+*.md
+**/*.md
+
+# pdf文件
+*.pdf
+**/*.pdf
+
+# svg文件
+*.svg
+**/*.svg
+
+# .env文件
+.env
+**/.env
+
+# .db文件
+*.db
+**/*.db
+.env
+
+# data文件夹
+data/
+
+# Chroma 数据库
+chroma_db/
+**/chroma_db/
+
+# md5 记录文件
+md5.text
+**/md5.text
+
+# prompts 文件夹
+prompts/
+
+# josn 文件
+*.json
+**/*.json
