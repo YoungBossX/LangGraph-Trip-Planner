@@ -16,9 +16,9 @@ def get_llm() -> BaseChatModel:
 
     if _llm_instance is None:
         # 从环境变量读取配置
-        api_key = os.getenv("OPENAI_API_KEY", "")
-        base_url = os.getenv("OPENAI_BASE_URL")
-        model = os.getenv("OPENAI_MODEL", "gpt-4")
+        api_key = os.getenv("LLM_API_KEY")
+        base_url = os.getenv("LLM_BASE_URL")
+        model = os.getenv("LLM_MODEL_ID")
 
         # 验证必要的配置
         if not api_key:
@@ -45,3 +45,10 @@ def reset_llm():
     """重置 LLM 实例（用于测试或重新配置）"""
     global _llm_instance
     _llm_instance = None
+
+if __name__ == "__main__":
+    try:
+        llm = get_llm()
+        print("LLM 获取成功:", llm)
+    except Exception as e:
+        print("LLM 获取失败:", str(e))
