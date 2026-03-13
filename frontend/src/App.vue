@@ -10,7 +10,7 @@
         <router-view />
       </a-layout-content>
       <a-layout-footer style="text-align: center">
-        多agent的智能旅行助手 ©2025 
+        多agent的智能旅行助手 ©2026
       </a-layout-footer>
     </a-layout>
   </div>
