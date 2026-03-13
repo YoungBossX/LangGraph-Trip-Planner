@@ -10,12 +10,6 @@ from dotenv import load_dotenv
 # 首先尝试加载当前目录的.env
 load_dotenv()
 
-# 然后尝试加载HelloAgents的.env(如果存在)
-helloagents_env = Path(__file__).parent.parent.parent.parent / "HelloAgents" / ".env"
-if helloagents_env.exists():
-    load_dotenv(helloagents_env, override=False)  # 不覆盖已有的环境变量
-
-
 class Settings(BaseSettings):
     """应用配置"""
 
@@ -86,7 +80,7 @@ def validate_config():
         errors.append("AMAP_API_KEY未配置")
 
     # LangChain 使用标准 OpenAI 环境变量
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+    openai_api_key = os.getenv("LLM_API_KEY")
     if not openai_api_key:
         errors.append("OPENAI_API_KEY 未配置（LangChain 必需）")
 
@@ -115,9 +109,9 @@ def print_config():
     print(f"高德地图API Key: {'已配置' if settings.amap_api_key else '未配置'}")
 
     # 检查LLM配置
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    openai_base_url = os.getenv("OPENAI_BASE_URL", settings.openai_base_url)
-    openai_model = os.getenv("OPENAI_MODEL", settings.openai_model)
+    openai_api_key = os.getenv("LLM_API_KEY")
+    openai_base_url = os.getenv("LLM_BASE_URL")
+    openai_model = os.getenv("LLM_MODEL_ID")
 
     print(f"OpenAI API Key: {'已配置' if openai_api_key else '未配置'}")
     print(f"OpenAI Base URL: {openai_base_url}")
