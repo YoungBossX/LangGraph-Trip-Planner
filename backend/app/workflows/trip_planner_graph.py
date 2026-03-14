@@ -132,10 +132,10 @@ class TripPlannerWorkflow:
         # 设置入口点
         workflow.set_entry_point("search_attractions")
         # 添加边（正常流程）
-        workflow.add_edge("search_attractions", "check_weather")
-        workflow.add_edge("check_weather", "find_hotels")
-        workflow.add_edge("find_hotels", "plan_itinerary")
-        workflow.add_edge("plan_itinerary", END)
+        # workflow.add_edge("search_attractions", "check_weather")
+        # workflow.add_edge("check_weather", "find_hotels")
+        # workflow.add_edge("find_hotels", "plan_itinerary")
+        # workflow.add_edge("plan_itinerary", END)
         # 添加错误处理边
         workflow.add_conditional_edges(
             "search_attractions",

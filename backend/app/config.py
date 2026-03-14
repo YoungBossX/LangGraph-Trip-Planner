@@ -36,9 +36,9 @@ class Settings(BaseSettings):
 
     # LangChain 配置
     langchain_tracing: bool = False  # 是否启用 LangSmith 追踪
-    langchain_endpoint: str = "https://api.smith.langchain.com"
+    langchain_endpoint: str = ""
     langchain_api_key: str = ""
-    langchain_project: str = "trip-planner"
+    langchain_project: str = ""
 
     # 智能体配置
     agent_max_iterations: int = 3

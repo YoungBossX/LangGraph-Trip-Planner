@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional, Union
 import logging
 from langchain_core.tools import BaseTool
 from ..config import get_settings
-from ..models.schemas import Location, POIInfo, WeatherInfo
+from ..models.schemas import Location, POIInfo, WeatherInfo, RouteInfo
 from ..tools.amap_mcp_tools import get_cached_amap_tools
 
 logger = logging.getLogger(__name__)
@@ -126,6 +126,10 @@ class AmapService:
                 logger.debug(f"天气查询结果类型: {type(result)}")
 
             # TODO: 解析实际的天气数据
+            if isinstance(result, str):
+                import json
+                parsed = json.loads(result)
+                return [WeatherInfo(**item) for item in parsed]
             return []
 
         except Exception as e:
@@ -190,7 +194,11 @@ class AmapService:
                 logger.debug(f"路线规划结果 (前200字符): {result[:200]}...")
 
             # TODO: 解析实际的路线数据
-            return {}
+            if isinstance(result, str):
+                import json
+                parsed = json.loads(result)
+                return RouteInfo(**parsed)
+            return None
 
         except Exception as e:
             logger.error(f"❌ 路线规划失败: {str(e)}", exc_info=True)
