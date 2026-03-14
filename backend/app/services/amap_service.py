@@ -220,7 +220,7 @@ class AmapService:
             if city:
                 arguments["city"] = city
 
-            result = _execute_tool("maps_geo", arguments)
+            result = _execute_tool("maps_geocode", arguments)
 
             logger.info(f"地理编码成功: {address} in {city or '未知城市'}")
 

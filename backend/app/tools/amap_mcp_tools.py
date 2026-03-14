@@ -106,9 +106,12 @@ async def create_amap_mcp_tools() -> List[BaseTool]:
         return []
 
     # 如果 MCP 适配器不可用，则返回模拟工具
+    # if not MCP_ADAPTERS_AVAILABLE:
+    #     logger.info("MCP适配器不可用，返回模拟工具")
+    #     return create_mock_tools()
+
     if not MCP_ADAPTERS_AVAILABLE:
-        logger.info("MCP适配器不可用，返回模拟工具")
-        return create_mock_tools()
+        raise RuntimeError("langchain_mcp_adapters 未安装，无法加载高德 MCP 工具")
 
     try:
 
@@ -231,7 +234,6 @@ def get_amap_essential_tools() -> List[BaseTool]:
 # 全局工具缓存
 _cached_tools: Optional[List[BaseTool]] = None
 
-
 def get_cached_amap_tools() -> List[BaseTool]:
     """获取缓存的高德地图工具（避免重复创建）"""
     global _cached_tools
@@ -246,12 +248,14 @@ def get_cached_amap_tools() -> List[BaseTool]:
             tools = get_amap_essential_tools()
 
         # 如果主要工具也失败，使用模拟工具
+        # if not tools:
+        #     logger.warning("所有真实工具加载失败，使用模拟工具...")
+        #     tools = create_mock_tools()
         if not tools:
-            logger.warning("所有真实工具加载失败，使用模拟工具...")
-            tools = create_mock_tools()
+            raise RuntimeError("高德 MCP 工具加载失败，请检查 uvx/amap-mcp-server/AMAP_API_KEY")
 
         _cached_tools = tools
-
+        
     return _cached_tools
 
 
