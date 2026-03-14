@@ -266,7 +266,7 @@ def clear_tools_cache():
 
 class SearchInput(BaseModel):
     """景点搜索输入参数"""
-    query: str = Field(description="搜索查询，如'北京景点'")
+    query: str = Field(description="搜索查询，如'杭州景点'")
     city: str = Field(description="城市名称")
 
 

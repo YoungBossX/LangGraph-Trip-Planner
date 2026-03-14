@@ -251,7 +251,6 @@ def create_planner_agent(tools: List[BaseTool]):
 # 智能体实例缓存
 _agent_instances: Dict[str, Any] = {}
 
-
 def get_agent(agent_type: str, tools: List[BaseTool]) -> Any:
     """获取智能体实例（带缓存）"""
     cache_key = f"{agent_type}_{len(tools)}"

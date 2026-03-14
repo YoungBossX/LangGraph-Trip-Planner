@@ -12,7 +12,7 @@
       <div class="icon-wrapper">
         <span class="icon">✈️</span>
       </div>
-      <h1 class="page-title">多agent的智能旅行助手</h1>
+      <h1 class="page-title">多Agent智能旅行助手</h1>
       <p class="page-subtitle">基于AI的个性化旅行规划,让每一次出行都完美无忧</p>
     </div>
 
@@ -37,7 +37,7 @@
                 </template>
                 <a-input
                   v-model:value="formData.city"
-                  placeholder="例如: 北京"
+                  placeholder="例如: 杭州"
                   size="large"
                   class="custom-input"
                 >
@@ -220,7 +220,7 @@ const formData = reactive<TripFormData & { start_date: Dayjs | null; end_date: D
   city: '',
   start_date: null,
   end_date: null,
-  travel_days: 1,
+  travel_days: 0,
   transportation: '公共交通',
   accommodation: '经济型酒店',
   preferences: [],

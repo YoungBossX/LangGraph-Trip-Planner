@@ -57,7 +57,7 @@ async def get_poi_detail(poi_id: str):
     summary="搜索POI",
     description="根据关键词搜索POI"
 )
-async def search_poi(keywords: str, city: str = "北京"):
+async def search_poi(keywords: str, city: str = "杭州"):
     """
     搜索POI
 

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 # ============ 请求模型 ============
 class TripRequest(BaseModel):
     """旅行规划请求"""
-    city: str = Field(..., description="目的地城市", example="北京")
+    city: str = Field(..., description="目的地城市", example="杭州")
     start_date: str = Field(..., description="开始日期 YYYY-MM-DD", example="2025-06-01")
     end_date: str = Field(..., description="结束日期 YYYY-MM-DD", example="2025-06-03")
     travel_days: int = Field(..., description="旅行天数", ge=1, le=30, example=3)
@@ -18,9 +18,9 @@ class TripRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "city": "北京",
-                "start_date": "2025-06-01",
-                "end_date": "2025-06-03",
+                "city": "杭州",
+                "start_date": "2026-03-01",
+                "end_date": "2025-03-03",
                 "travel_days": 3,
                 "transportation": "公共交通",
                 "accommodation": "经济型酒店",
@@ -37,8 +37,8 @@ class POISearchRequest(BaseModel):
 
 class RouteRequest(BaseModel):
     """路线规划请求"""
-    origin_address: str = Field(..., description="起点地址", example="北京市朝阳区阜通东大街6号")
-    destination_address: str = Field(..., description="终点地址", example="北京市海淀区上地十街10号")
+    origin_address: str = Field(..., description="起点地址", example="浙江省杭州市下沙高教园区6号大街215号")
+    destination_address: str = Field(..., description="终点地址", example="浙江省杭州市西湖区龙井路1号")
     origin_city: Optional[str] = Field(default=None, description="起点城市")
     destination_city: Optional[str] = Field(default=None, description="终点城市")
     route_type: str = Field(default="walking", description="路线类型: walking/driving/transit")

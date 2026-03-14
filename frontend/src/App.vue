@@ -3,14 +3,14 @@
     <a-layout style="min-height: 100vh">
       <a-layout-header style="background: #001529; padding: 0 50px">
         <div style="color: white; font-size: 24px; font-weight: bold">
-          🌍 多agent的智能旅行助手
+          🌍 多Agent智能旅行助手
         </div>
       </a-layout-header>
       <a-layout-content style="padding: 24px">
         <router-view />
       </a-layout-content>
       <a-layout-footer style="text-align: center">
-        多agent的智能旅行助手 ©2026
+        多Agent智能旅行助手 ©2026
       </a-layout-footer>
     </a-layout>
   </div>

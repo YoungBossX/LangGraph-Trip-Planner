@@ -833,7 +833,7 @@ const restoreMap = () => {
 const initMap = async () => {
   try {
     const AMap = await AMapLoader.load({
-      key: import.meta.env.VITE_AMAP_WEB_JS_KEY,  // 高德地图Web端(JS API) Key
+      key: import.meta.env.VITE_AMAP_WEB_JS_KEY, // 高德地图Web端(JS API) Key
       version: '2.0',
       plugins: ['AMap.Marker', 'AMap.Polyline', 'AMap.InfoWindow']
     })
@@ -841,7 +841,7 @@ const initMap = async () => {
     // 创建地图实例
     map = new AMap.Map('amap-container', {
       zoom: 12,
-      center: [116.397128, 39.916527], // 默认中心点(北京)
+      center: [120.209903, 30.246566], // 默认中心点(杭州)
       viewMode: '3D'
     })
 
@@ -1431,4 +1431,3 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   }
 }
 </style>
-

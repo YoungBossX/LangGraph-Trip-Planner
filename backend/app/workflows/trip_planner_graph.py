@@ -22,7 +22,6 @@ from backend.app.models.schemas import (
 # 设置日志记录
 logger = logging.getLogger(__name__)
 
-
 class TripPlannerWorkflow:
     """多智能体旅行规划工作流 (LangGraph 版本)"""
 
@@ -598,10 +597,8 @@ class TripPlannerWorkflow:
 
         return final_state["trip_plan"]
 
-
 # 全局工作流实例
 _trip_planner_workflow: Optional[TripPlannerWorkflow] = None
-
 
 def get_trip_planner_workflow() -> TripPlannerWorkflow:
     """获取旅行规划工作流实例（单例模式）"""
@@ -611,7 +608,6 @@ def get_trip_planner_workflow() -> TripPlannerWorkflow:
         _trip_planner_workflow = TripPlannerWorkflow()
 
     return _trip_planner_workflow
-
 
 def reset_workflow():
     """重置工作流实例（用于测试或重新配置）"""
