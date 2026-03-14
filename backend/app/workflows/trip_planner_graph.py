@@ -558,7 +558,7 @@ class TripPlannerWorkflow:
                     Attraction(
                         name=f"{request.city}景点{j+1}",
                         address=f"{request.city}市",
-                        location=Location(longitude=116.4 + i*0.01 + j*0.005, latitude=39.9 + i*0.01 + j*0.005),
+                        location=Location(longitude=120.1551 + i*0.01 + j*0.005, latitude=30.2741 + i*0.01 + j*0.005),
                         visit_duration=120,
                         description=f"这是{request.city}的著名景点",
                         category="景点"

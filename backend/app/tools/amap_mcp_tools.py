@@ -298,7 +298,7 @@ def create_mock_tools() -> List[BaseTool]:
             {
                 "name": f"{city}著名景点2",
                 "address": f"{city}市某区某路2号",
-                "location": {"longitude": 116.407128, "latitude": 39.926527},
+                "location": {"longitude": 116.397128, "latitude": 39.916527},
                 "visit_duration": 90,
                 "description": f"这是{city}的另一个著名景点，风景优美",
                 "category": "公园",
@@ -356,7 +356,7 @@ def create_mock_tools() -> List[BaseTool]:
             {
                 "name": f"{query.split()[0]}经济型酒店1",
                 "address": f"{query.split()[0]}市某区某路10号",
-                "location": {"longitude": 116.387128, "latitude": 39.906527},
+                "location": {"longitude": 116.397128, "latitude": 39.916527},
                 "price_range": "200-400元",
                 "rating": "4.2",
                 "distance": "距离市中心2公里",
@@ -366,7 +366,7 @@ def create_mock_tools() -> List[BaseTool]:
             {
                 "name": f"{query.split()[0]}经济型酒店2",
                 "address": f"{query.split()[0]}市某区某路20号",
-                "location": {"longitude": 116.417128, "latitude": 39.936527},
+                "location": {"longitude": 116.397128, "latitude": 39.916527},
                 "price_range": "150-350元",
                 "rating": "4.0",
                 "distance": "距离景点1公里",
