@@ -6,12 +6,10 @@ from backend.app.models.schemas import (
     TripRequest,
     TripPlanResponse
 )
-# 从新的工作流导入
 from backend.app.workflows.trip_planner_graph import get_trip_planner_workflow
 
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
 logger = logging.getLogger(__name__)
-
 
 @router.post(
     "/plan",
@@ -60,7 +58,6 @@ async def plan_trip(request: TripRequest):
             detail=f"生成旅行计划失败: {str(e)}"
         )
 
-
 @router.get(
     "/health",
     summary="健康检查",
@@ -84,4 +81,3 @@ async def health_check():
             status_code=503,
             detail=f"服务不可用: {str(e)}"
         )
-

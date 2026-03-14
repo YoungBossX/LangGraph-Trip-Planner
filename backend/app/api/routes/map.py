@@ -18,8 +18,8 @@ router = APIRouter(prefix="/map", tags=["地图服务"])
     description="根据关键词搜索POI(兴趣点)"
 )
 async def search_poi(
-    keywords: str = Query(..., description="搜索关键词", example="西湖"),
-    city: str = Query(..., description="城市", example="杭州"),
+    keywords: str = Query(..., description="搜索关键词", examples=["西湖"]),
+    city: str = Query(..., description="城市", examples=["杭州"]),
     citylimit: bool = Query(True, description="是否限制在城市范围内")
 ):
     """
@@ -60,7 +60,7 @@ async def search_poi(
     description="查询指定城市的天气信息"
 )
 async def get_weather(
-    city: str = Query(..., description="城市名称", example="杭州")
+    city: str = Query(..., description="城市名称", examples=["杭州"])
 ):
     """
     查询天气
