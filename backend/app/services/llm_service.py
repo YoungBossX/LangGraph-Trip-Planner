@@ -30,9 +30,9 @@ def get_llm() -> BaseChatModel:
             base_url=base_url,
             model=model,
             temperature=0.7,
-            max_tokens=000,
-            timeout=60.0,
-            max_retries=3
+            max_tokens=2000,
+            timeout=180.0,
+            max_retries=1
         )
 
         print(f"[SUCCESS] LangChain LLM 初始化成功")
