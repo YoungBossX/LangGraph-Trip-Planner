@@ -3,10 +3,6 @@ import os
 from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
-
-# 加载当前目录的.env
-load_dotenv()
 
 class Settings(BaseSettings):
     """应用配置"""
@@ -49,7 +45,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     class Config:
-        env_file = "../.env"
+        env_file = ".env"
         case_sensitive = False
         extra = "ignore"  # 忽略额外的环境变量
 
