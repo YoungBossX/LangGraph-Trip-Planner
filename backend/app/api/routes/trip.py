@@ -2,11 +2,11 @@
 
 from fastapi import APIRouter, HTTPException
 import logging
-from backend.app.models.schemas import (
+from ...models.schemas import (
     TripRequest,
     TripPlanResponse
 )
-from backend.app.workflows.trip_planner_graph import get_trip_planner_workflow
+from ...workflows.trip_planner_graph import get_trip_planner_workflow
 
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
 logger = logging.getLogger(__name__)

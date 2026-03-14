@@ -20,7 +20,7 @@ class TripRequest(BaseModel):
             "example": {
                 "city": "杭州",
                 "start_date": "2026-03-01",
-                "end_date": "2025-03-03",
+                "end_date": "2026-03-03",
                 "travel_days": 3,
                 "transportation": "公共交通",
                 "accommodation": "经济型酒店",

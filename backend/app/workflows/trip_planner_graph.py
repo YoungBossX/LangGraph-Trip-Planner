@@ -13,8 +13,8 @@ from ..agents.agents import (
     create_hotel_agent,
     create_planner_agent
 )
-from backend.app.tools.amap_mcp_tools import get_cached_amap_tools
-from backend.app.models.schemas import (
+from ..tools.amap_mcp_tools import get_cached_amap_tools
+from ..models.schemas import (
     TripRequest, TripPlan, DayPlan, Attraction, Meal, WeatherInfo,
     Location, Hotel, Budget
 )

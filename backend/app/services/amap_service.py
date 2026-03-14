@@ -96,7 +96,10 @@ class AmapService:
                 logger.debug(f"POI搜索结果类型: {type(result)}")
 
             # TODO: 解析实际的POI数据
-            return []
+            if isinstance(result, str):
+                import json
+                parsed = json.loads(result)
+                return [POIInfo(**item) for item in parsed]
 
         except Exception as e:
             logger.error(f"❌ POI搜索失败: {str(e)}", exc_info=True)
@@ -191,7 +194,7 @@ class AmapService:
 
         except Exception as e:
             logger.error(f"❌ 路线规划失败: {str(e)}", exc_info=True)
-            return {}
+            return None
 
     def geocode(self, address: str, city: Optional[str] = None) -> Optional[Location]:
         """

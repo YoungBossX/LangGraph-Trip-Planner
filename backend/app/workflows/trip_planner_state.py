@@ -8,7 +8,7 @@ except ImportError:
     from typing_extensions import Annotated
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
-from backend.app.models.schemas import TripRequest, TripPlan, Attraction, WeatherInfo, Hotel
+from ...app.models.schemas import TripRequest, TripPlan, Attraction, WeatherInfo, Hotel
 
 
 def update_step(prev: str, new: str) -> str:

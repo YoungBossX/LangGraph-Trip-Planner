@@ -31,8 +31,8 @@ class Settings(BaseSettings):
 
     # LLM配置 (从环境变量读取,由HelloAgents管理)
     llm_api_key: str = ""
-    llm_base_url: str = os.getenv("LLM_BASE_URL")
-    llm_model: str = os.getenv("LLM_MODEL_ID")
+    llm_base_url: str = ""
+    llm_model: str = ""
 
     # LangChain 配置
     langchain_tracing: bool = False  # 是否启用 LangSmith 追踪

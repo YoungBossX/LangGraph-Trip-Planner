@@ -1,7 +1,7 @@
 """地图服务API路由"""
 
 from fastapi import APIRouter, HTTPException, Query
-from backend.app.models.schemas import (
+from ...models.schemas import (
     POISearchResponse,
     RouteRequest,
     RouteResponse,
@@ -147,7 +147,7 @@ async def health_check():
         return {
             "status": "healthy",
             "service": "map-service",
-            "mcp_tools_count": len(service.mcp_tool._available_tools)
+            "mcp_tools_count": len(service.tools)
         }
     except Exception as e:
         raise HTTPException(

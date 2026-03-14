@@ -5,7 +5,7 @@ import dotenv
 from pathlib import Path
 from typing import Optional
 
-dotenv.load_dotenv(Path(__file__).parent.parent / ".env")
+dotenv.load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 # 全局 LLM 实例
 _llm_instance: Optional[BaseChatModel] = None
