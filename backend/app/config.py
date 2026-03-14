@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     unsplash_access_key: str = ""
     unsplash_secret_key: str = ""
 
-    # LLM配置 (从环境变量读取,由HelloAgents管理)
+    # LLM配置 
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_model: str = ""
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     class Config:
-        env_file = ".env"
+        env_file = Path(__file__).parent.parent / ".env"
         case_sensitive = False
         extra = "ignore"  # 忽略额外的环境变量
 

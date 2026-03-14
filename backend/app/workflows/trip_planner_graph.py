@@ -106,7 +106,8 @@ class TripPlannerWorkflow:
                         if isinstance(content, dict):
                             import json
                             content = json.dumps(content, ensure_ascii=False)
-                        return str(content)
+                        if content:
+                            return str(content)
             # 如果没有找到 assistant 消息，返回空字符串
             return ""
         elif "output" in result:
@@ -164,8 +165,17 @@ class TripPlannerWorkflow:
             }
         )
 
+        workflow.add_conditional_edges(
+            "plan_itinerary",
+            self._check_error,
+            {
+                "continue": END,
+                "error": "handle_error"
+            }
+        )
+        
         workflow.add_edge("handle_error", END)
-
+        
         return workflow.compile()
 
     def _search_attractions(self, state: TripPlannerState) -> Dict[str, Any]:
