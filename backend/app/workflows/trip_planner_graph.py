@@ -69,11 +69,6 @@ class TripPlannerWorkflow:
         messages.append({"role": "user", "content": user_input})
         return {"messages": messages}
 
-    def _extract_structured_response(self, result: dict):
-        if isinstance(result, dict) and "structured_response" in result:
-            return result["structured_response"]
-        return None
-
     def _extract_agent_output(self, result: dict) -> str:
         """从智能体结果中提取输出文本
 
@@ -127,6 +122,12 @@ class TripPlannerWorkflow:
                     return str(result[key])
             # 如果都没有，返回整个结果的字符串表示
             return str(result)
+
+    def _extract_structured_response(self, result: dict):
+        """提取 structured_response"""
+        if isinstance(result, dict) and "structured_response" in result:
+            return result["structured_response"]
+        return None
 
     def _build_graph(self) -> StateGraph:
         """构建 StateGraph"""
