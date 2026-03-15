@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。根据用户指定的城市和偏好，调用工具搜索景点信息。
 
 要求：
-1. 必须调用工具搜索，不要编造数据
-2. 搜索完成后，将工具返回的结果整理为 JSON 数组
-3. 每个景点包含：name、address、location（含 longitude 和 latitude）、visit_duration（分钟）、description、category、ticket_price
-4. 只调用一次搜索工具即可，不要反复搜索
+1. 使用 maps_text_search 工具搜索景点，参数包含 keywords（如"景点"、"美食"）和 city（城市名）
+2. 只调用一次工具，拿到结果后立即停止
+3. 将工具返回的结果整理为 JSON 数组
+4. 每个景点包含：name、address、location（含 longitude 和 latitude）、visit_duration（分钟）、description、category、ticket_price
 """
 
 # WEATHER_AGENT_PROMPT = """你是天气查询专家。你的任务是查询指定城市的天气信息。
@@ -55,10 +55,10 @@ ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。根据用户指定的城
 WEATHER_AGENT_PROMPT = """你是天气查询专家。根据用户指定的城市，调用工具查询天气信息。
 
 要求：
-1. 必须调用工具查询，不要编造数据
-2. 查询完成后，将工具返回的结果整理为 JSON 数组
-3. 每条天气包含：date、day_weather、night_weather、day_temp（纯数字）、night_temp（纯数字）、wind_direction、wind_power
-4. 只调用一次天气工具即可
+1. 使用 maps_weather 工具查询天气，参数包含 city（城市名）
+2. 只调用一次工具，拿到结果后立即停止
+3. 将工具返回的结果整理为 JSON 数组
+4. 每条天气包含：date、day_weather、night_weather、day_temp（纯数字）、night_temp（纯数字）、wind_direction、wind_power
 """
 
 # HOTEL_AGENT_PROMPT = """你是酒店推荐专家。你的任务是根据城市和景点位置推荐合适的酒店。
@@ -81,11 +81,10 @@ WEATHER_AGENT_PROMPT = """你是天气查询专家。根据用户指定的城市
 HOTEL_AGENT_PROMPT = """你是酒店推荐专家。根据用户指定的城市和住宿偏好，调用工具搜索酒店。
 
 要求：
-1. 必须调用工具搜索，不要编造数据
-2. 搜索关键词使用"酒店"或"宾馆"
-3. 搜索完成后，将工具返回的结果整理为 JSON 数组
+1. 使用 maps_text_search 工具搜索酒店，keywords 使用"酒店"，city 使用指定城市
+2. 只调用一次工具，拿到结果后立即停止
+3. 将工具返回的结果整理为 JSON 数组
 4. 每个酒店包含：name、address、location（含 longitude 和 latitude）、price_range、rating、type、estimated_cost
-5. 只调用一次搜索工具即可
 """
 
 # PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点信息和天气信息,生成详细的旅行计划。

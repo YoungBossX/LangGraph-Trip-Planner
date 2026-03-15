@@ -41,10 +41,18 @@ class TripPlannerWorkflow:
 
             # 创建智能体
             logger.info("创建智能体...")
-            self.attraction_agent = create_attraction_search_agent(self.tools)
-            self.weather_agent = create_weather_agent(self.tools)
-            self.hotel_agent = create_hotel_agent(self.tools)
-            self.planner_agent = create_planner_agent([])  # 行程规划不需要外部工具
+
+            # 按工具名过滤，每个 Agent 只拿需要的工具
+            search_tools = [t for t in self.tools if "text_search" in t.name.lower()]
+            weather_tools = [t for t in self.tools if "weather" in t.name.lower()]
+
+            logger.info(f"搜索工具: {[t.name for t in search_tools]}")
+            logger.info(f"天气工具: {[t.name for t in weather_tools]}")
+
+            self.attraction_agent = create_attraction_search_agent(search_tools if search_tools else self.tools)
+            self.weather_agent = create_weather_agent(weather_tools if weather_tools else self.tools)
+            self.hotel_agent = create_hotel_agent(search_tools if search_tools else self.tools)
+            self.planner_agent = create_planner_agent([])
 
             # 构建工作流图
             logger.info("构建 StateGraph...")
@@ -186,7 +194,7 @@ class TripPlannerWorkflow:
 
             result = self.attraction_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 8}
+                config={"recursion_limit": 25}
             )
 
             output = self._extract_agent_output(result)
@@ -217,7 +225,7 @@ class TripPlannerWorkflow:
 
             result = self.weather_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 8}
+                config={"recursion_limit": 25}
             )
 
             output = self._extract_agent_output(result)
@@ -248,7 +256,7 @@ class TripPlannerWorkflow:
 
             result = self.hotel_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 8}
+                config={"recursion_limit": 25}
             )
 
             output = self._extract_agent_output(result)
@@ -285,7 +293,7 @@ class TripPlannerWorkflow:
 
             result = self.planner_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 8}
+                config={"recursion_limit": 25}
             )
 
             output = self._extract_agent_output(result)
