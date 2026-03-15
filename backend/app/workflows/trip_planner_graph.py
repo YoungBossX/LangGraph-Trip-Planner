@@ -102,7 +102,7 @@ class TripPlannerWorkflow:
 
             result = self.attraction_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 50}
+                config={"recursion_limit": 25}
             )
 
             output = self._extract_agent_output(result)
@@ -137,7 +137,7 @@ class TripPlannerWorkflow:
 
             result = self.weather_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 50}
+                config={"recursion_limit": 25}
             )
 
             output = self._extract_agent_output(result)
@@ -168,7 +168,7 @@ class TripPlannerWorkflow:
 
             result = self.hotel_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 50}
+                config={"recursion_limit": 25}
             )
 
             output = self._extract_agent_output(result)
