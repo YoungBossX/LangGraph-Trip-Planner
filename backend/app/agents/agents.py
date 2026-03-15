@@ -27,38 +27,32 @@ logger = logging.getLogger(__name__)
 # 5. 返回的JSON应该是一个景点列表，每个景点包含name、address、location、visit_duration、description、category、ticket_price等字段
 # """
 
-ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。根据用户指定的城市和偏好，必须先调用工具搜索，再把结果整理为 JSON。
+ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。根据用户指定的城市和偏好，调用工具搜索景点。
 
-硬性要求：
-1. 必须优先调用工具，不要编造景点、地址、经纬度、时长、门票价格、人均消费。
-2. 优先使用 maps_text_search，city 使用用户城市，keywords 根据偏好生成。
-3. 只基于工具返回结果整理信息，不要补充工具未提供的事实。
-4. 不要把人均消费写入 ticket_price；餐厅或美食类地点的价格写入 price_text。
-5. 如果没有明确经纬度、停留时间、门票价格，就返回 null、空字符串或默认值，不要猜。
-6. 不要返回 name 为空的地点。
-7. 最终回答必须只输出一个 JSON 对象；不要输出任何解释、标题、前后缀、Markdown、列表符号或 ```json 代码块。
-8. JSON 格式必须严格为：
-{
-  "attractions": [
-    {
-      "name": "地点名称",
-      "address": "地址",
-      "location": {"longitude": 120.0, "latitude": 30.0},
-      "visit_duration": 120,
-      "description": "简介",
-      "category": "景点或美食",
-      "rating": 4.5,
-      "photos": [],
-      "poi_id": "",
-      "image_url": "",
-      "ticket_price": 0,
-      "price_text": ""
-    }
-  ],
-  "summary": "简短总结"
-}
-9. location 只能是对象或 null；rating 只能是数字或 null；ticket_price 只能是数字。
-10. 如果没有找到结果，返回 {"attractions": [], "summary": "未找到合适结果"}。"""
+步骤：
+1. 调用 maps_text_search 工具搜索，city 用用户城市，keywords 根据偏好生成
+2. 只调用一次工具，拿到结果后立即停止
+3. 从工具返回的 pois 数组中提取景点信息
+
+输出格式（严格遵守，不要输出任何其他文字）：
+[
+  {
+    "name": "景点名称",
+    "address": "地址",
+    "id": "POI的id",
+    "location": null,
+    "visit_duration": 120,
+    "description": "描述",
+    "category": "类别",
+    "ticket_price": 0
+  }
+]
+
+注意：
+- 必须保留工具返回的 id 字段
+- 输出必须是纯 JSON 数组，禁止使用 Markdown
+- 不要添加任何解释文字，直接输出 JSON
+"""
 
 # WEATHER_AGENT_PROMPT = """你是天气查询专家。你的任务是查询指定城市的天气信息。
 
@@ -76,32 +70,32 @@ ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。根据用户指定的城
 # 5. 返回的JSON应该是一个天气信息列表，每个天气信息包含date、day_weather、night_weather、day_temp、night_temp、wind_direction、wind_power等字段
 # """
 
-WEATHER_AGENT_PROMPT = """你是天气查询专家。根据用户指定的城市，必须先调用工具查询天气，再把结果整理为 JSON。
+WEATHER_AGENT_PROMPT = """你是天气查询专家。根据用户指定的城市，调用工具查询天气信息。
 
-硬性要求：
-1. 必须优先调用工具，不要编造天气信息。
-2. 使用 maps_weather 工具查询天气，city 使用用户指定城市。
-3. 只基于工具返回结果整理信息，不要补充工具未提供的事实。
-4. 温度字段必须是纯数字，不要带 °C、℃、度 等单位。
-5. 如果某个字段缺失，返回空字符串或 0，不要猜测。
-6. 每条天气至少应包含 date；如果某条结果没有日期，忽略该条。
-7. 最终回答必须只输出一个 JSON 对象；不要输出任何解释、标题、前后缀、Markdown、列表符号或 ```json 代码块。
-8. JSON 格式必须严格为：
-{
-  "weather_info": [
-    {
-      "date": "YYYY-MM-DD",
-      "day_weather": "晴",
-      "night_weather": "多云",
-      "day_temp": 25,
-      "night_temp": 15,
-      "wind_direction": "东风",
-      "wind_power": "1-3级"
-    }
-  ],
-  "summary": "简短总结"
-}
-9. 如果没有查询到结果，返回 {"weather_info": [], "summary": "未查询到天气信息"}。"""
+步骤：
+1. 调用 maps_weather 工具查询，city 用用户城市
+2. 只调用一次工具，拿到结果后停止
+3. 从工具返回的结果中提取每天的天气数据，日期和数值必须使用工具返回的真实值
+
+输出格式（严格遵守，不要输出任何其他文字）：
+[
+  {
+    "date": "YYYY-MM-DD",
+    "day_weather": "天气描述",
+    "night_weather": "天气描述",
+    "day_temp": 25,
+    "night_temp": 15,
+    "wind_direction": "风向",
+    "wind_power": "风力"
+  }
+]
+
+注意：
+- 日期和温度必须使用工具返回的真实值，不要抄示例
+- 温度必须是纯数字，不带单位
+- 输出必须是纯 JSON 数组，禁止使用 Markdown 格式
+- 不要添加任何解释文字，直接输出 JSON
+"""
 
 # HOTEL_AGENT_PROMPT = """你是酒店推荐专家。你的任务是根据城市和景点位置推荐合适的酒店。
 
@@ -120,34 +114,33 @@ WEATHER_AGENT_PROMPT = """你是天气查询专家。根据用户指定的城市
 # 6. 返回的JSON应该是一个酒店列表，每个酒店包含name、address、location、price_range、rating、distance、type、estimated_cost等字段
 # """
 
-HOTEL_AGENT_PROMPT = """你是酒店推荐专家。根据用户指定的城市和住宿偏好，必须先调用工具搜索酒店，再把结果整理为 JSON。
+HOTEL_AGENT_PROMPT = """你是酒店推荐专家。根据用户指定的城市和住宿偏好，调用工具搜索酒店。
 
-硬性要求：
-1. 必须优先调用工具，不要编造酒店信息。
-2. 使用 maps_text_search 工具搜索酒店，city 使用用户指定城市，keywords 根据住宿偏好生成；默认可使用“酒店”“宾馆”“经济型酒店”“舒适型酒店”等关键词。
-3. 只基于工具返回结果整理信息，不要补充工具未提供的事实。
-4. 如果有经纬度就返回；如果没有明确经纬度，则返回 null，不要猜测。
-5. rating 只在工具结果明确给出时填写；没有则为 null。
-6. estimated_cost 只有在工具结果明确给出价格或可可靠推断时才填写数字，否则填 0。
-7. 不要返回 name 为空的酒店；如果某条结果缺少名称，直接忽略。
-8. 最终回答必须只输出一个 JSON 对象；不要输出任何解释、标题、前后缀、Markdown、列表符号或 ```json 代码块。
-9. JSON 格式必须严格为：
-{
-  "hotels": [
-    {
-      "name": "酒店名称",
-      "address": "酒店地址",
-      "location": {"longitude": 120.0, "latitude": 30.0},
-      "price_range": "",
-      "rating": 4.5,
-      "distance": "",
-      "type": "经济型酒店",
-      "estimated_cost": 300
-    }
-  ],
-  "summary": "简短总结"
-}
-10. 如果没有找到结果，返回 {"hotels": [], "summary": "未找到合适酒店"}。"""
+步骤：
+1. 调用 maps_text_search 工具搜索酒店，keywords 使用"酒店"，city 用用户城市
+2. 只调用一次工具，拿到结果后立即停止
+3. 从工具返回的 pois 数组中提取酒店信息
+
+输出格式（严格遵守，不要输出任何其他文字）：
+[
+  {
+    "name": "酒店名称",
+    "address": "地址",
+    "id": "POI的id",
+    "location": null,
+    "price_range": "200-400元",
+    "rating": "4.5",
+    "type": "经济型酒店",
+    "estimated_cost": 300
+  }
+]
+
+注意：
+- 必须保留工具返回的 id 字段
+- location 填 null 即可，坐标会在后续步骤自动补充
+- 输出必须是纯 JSON 数组，禁止使用 Markdown
+- 不要添加任何解释文字，直接输出 JSON
+"""
 
 # PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点信息和天气信息,生成详细的旅行计划。
 
@@ -239,8 +232,9 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据提供的景点、天
 6. attractions 中只保留有效景点，不要返回 name 为空的对象。
 7. meals 中应尽量包含 breakfast、lunch、dinner；如果信息不足，可以给出通用建议，但不要编造具体不存在的商家。
 8. budget 必须包含 total_attractions、total_hotels、total_meals、total_transportation、total，各项金额为数字；如果无法确定，填 0。
-9. 最终回答必须只输出一个 JSON 对象；不要输出任何解释、标题、前后缀、Markdown、列表符号或 ```json 代码块。
-10. JSON 顶层格式必须严格为：
+9. 景点和酒店的 location 经纬度必须原样复制输入数据中的值。
+10. 最终回答必须只输出一个 JSON 对象；不要输出任何解释、标题、前后缀、Markdown、列表符号或 ```json 代码块。
+11. JSON 顶层格式必须严格为：
 {
   "city": "城市名称",
   "start_date": "YYYY-MM-DD",
@@ -255,7 +249,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据提供的景点、天
       "hotel": {
         "name": "酒店名称",
         "address": "酒店地址",
-        "location": {"longitude": 120.0, "latitude": 30.0},
+        "location": {"longitude": "使用输入数据中的值", "latitude": "使用输入数据中的值"}
         "price_range": "",
         "rating": 4.5,
         "distance": "",
@@ -266,7 +260,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据提供的景点、天
         {
           "name": "景点名称",
           "address": "详细地址",
-          "location": {"longitude": 120.0, "latitude": 30.0},
+          "location": {"longitude": "使用输入数据中的值", "latitude": "使用输入数据中的值"}
           "visit_duration": 120,
           "description": "景点描述",
           "category": "景点",
@@ -301,7 +295,8 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据提供的景点、天
     "total": 0
   }
 }
-11. 如果某个字段缺失，请返回默认值，不要省略整个顶层字段。"""
+12. 如果某个字段缺失，请返回默认值，不要省略整个顶层字段。
+"""
 
 
 def create_attraction_search_agent(tools: List[BaseTool]):

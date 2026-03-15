@@ -36,8 +36,8 @@ class TripPlannerWorkflow:
                     logger.debug(f"  工具: {tool.name} - {tool.description}")
 
             # 按工具名过滤，每个 Agent 只拿需要的工具
-            search_tools = [t for t in self.tools if "text_search" in t.name.lower()]
-            weather_tools = [t for t in self.tools if "weather" in t.name.lower()]
+            search_tools = [t for t in self.tools if t.name == "maps_text_search"]
+            weather_tools = [t for t in self.tools if t.name in ("maps_weather" )]
 
             logger.info(f"搜索工具: {[t.name for t in search_tools]}")
             logger.info(f"天气工具: {[t.name for t in weather_tools]}")
@@ -102,13 +102,16 @@ class TripPlannerWorkflow:
 
             result = self.attraction_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 25}
+                config={"recursion_limit": 50}
             )
 
             output = self._extract_agent_output(result)
             logger.info(f"Agent 输出前300字符: {output[:300]}")
 
             attractions = self._parse_attractions(output)
+            logger.info(f"解析到 {len(attractions)} 个景点，开始补充坐标...")
+
+            attractions = self._fill_locations(attractions, state["request"].city)
             logger.info(f"最终保留 {len(attractions)} 个有效景点")
 
             if not attractions:
@@ -128,12 +131,13 @@ class TripPlannerWorkflow:
     def _check_weather(self, state: TripPlannerState) -> Dict[str, Any]:
         logger.info("🌤️  查询天气...")
         try:
-            query = f"查询{state['request'].city}的天气信息"
+            request = state["request"]
+            query = f"查询{request.city}的天气信息，旅行日期为{request.start_date}至{request.end_date}"
             logger.info(f"查询内容: {query}")
 
             result = self.weather_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 25}
+                config={"recursion_limit": 50}
             )
 
             output = self._extract_agent_output(result)
@@ -164,13 +168,16 @@ class TripPlannerWorkflow:
 
             result = self.hotel_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 25}
+                config={"recursion_limit": 50}
             )
 
             output = self._extract_agent_output(result)
             logger.info(f"Agent 输出前300字符: {output[:300]}")
 
             hotels = self._parse_hotels(output)
+            logger.info(f"解析到 {len(hotels)} 个酒店，开始补充坐标...")
+
+            hotels = self._fill_hotel_locations(hotels, state["request"].city)
             logger.info(f"最终保留 {len(hotels)} 个有效酒店")
 
             if not hotels:
@@ -187,6 +194,100 @@ class TripPlannerWorkflow:
                 "error": f"酒店搜索失败: {str(e)}",
                 "current_step": "error"
             }
+        
+    def _fill_locations(self, attractions: List[Attraction], city: str) -> List[Attraction]:
+        """用 maps_geo 工具批量补充景点坐标"""
+        geo_tool = next((t for t in self.tools if t.name == "maps_geo"), None)
+        if not geo_tool:
+            logger.warning("未找到 maps_geo 工具，无法补充坐标")
+            return attractions
+
+        for attr in attractions:
+            if attr.location is not None:
+                continue
+            try:
+                address = f"{city}{attr.address}" if attr.address else f"{city}{attr.name}"
+                geo_result = geo_tool.invoke({"address": address, "city": city})
+                logger.info(f"[GEO] {attr.name} -> {str(geo_result)[:200]}")
+
+                # 解析 geo 返回的坐标
+                location = self._extract_location_from_geo(geo_result)
+                if location:
+                    attr.location = location
+                    logger.info(f"[GEO] {attr.name} 坐标: {location.longitude}, {location.latitude}")
+            except Exception as e:
+                logger.warning(f"[GEO] {attr.name} 地理编码失败: {str(e)}")
+
+        return attractions
+
+    def _fill_hotel_locations(self, hotels: List[Hotel], city: str) -> List[Hotel]:
+        """用 maps_geo 工具批量补充酒店坐标"""
+        geo_tool = next((t for t in self.tools if t.name == "maps_geo"), None)
+        if not geo_tool:
+            logger.warning("未找到 maps_geo 工具，无法补充坐标")
+            return hotels
+
+        for hotel in hotels:
+            if hotel.location is not None:
+                continue
+            try:
+                address = f"{city}{hotel.address}" if hotel.address else f"{city}{hotel.name}"
+                geo_result = geo_tool.invoke({"address": address, "city": city})
+                logger.info(f"[GEO] {hotel.name} -> {str(geo_result)[:200]}")
+
+                location = self._extract_location_from_geo(geo_result)
+                if location:
+                    hotel.location = location
+                    logger.info(f"[GEO] {hotel.name} 坐标: {location.longitude}, {location.latitude}")
+            except Exception as e:
+                logger.warning(f"[GEO] {hotel.name} 地理编码失败: {str(e)}")
+
+        return hotels
+
+    def _extract_location_from_geo(self, geo_result: Any) -> Optional[Location]:
+        """从 maps_geo 返回值中提取坐标"""
+        try:
+            # MCP 工具返回格式可能是 tuple: ([{"type":"text","text":"..."}], None)
+            raw = geo_result
+            if isinstance(raw, tuple):
+                raw = raw[0]
+
+            # 可能是 list: [{"type":"text","text":"..."}]
+            if isinstance(raw, list):
+                for item in raw:
+                    if isinstance(item, dict) and "text" in item:
+                        raw = item["text"]
+                        break
+                    elif isinstance(item, list):
+                        for sub in item:
+                            if isinstance(sub, dict) and "text" in sub:
+                                raw = sub["text"]
+                                break
+
+            # 现在 raw 应该是 JSON 字符串
+            if isinstance(raw, str):
+                data = json.loads(raw)
+            elif isinstance(raw, dict):
+                data = raw
+            else:
+                return None
+
+            # 从高德 geo 响应中提取坐标
+            # 格式可能是 {"return": [{"location": "120.15,30.27", ...}]}
+            # 或者 {"geocodes": [{"location": "120.15,30.27", ...}]}
+            geocodes = data.get("geocodes", []) or data.get("return", [])
+            if geocodes and isinstance(geocodes, list):
+                loc_str = geocodes[0].get("location", "")
+                if "," in str(loc_str):
+                    parts = str(loc_str).split(",")
+                    return Location(
+                        longitude=float(parts[0].strip()),
+                        latitude=float(parts[1].strip())
+                    )
+        except Exception as e:
+            logger.warning(f"解析 geo 结果失败: {str(e)}")
+
+        return None
 
     def _plan_itinerary(self, state: TripPlannerState) -> Dict[str, Any]:
         logger.info("📋 生成行程计划...")
@@ -201,7 +302,7 @@ class TripPlannerWorkflow:
 
             result = self.planner_agent.invoke(
                 self._prepare_agent_input(query, []),
-                config={"recursion_limit": 25}
+                config={"recursion_limit": 50}
             )
 
             output = self._extract_agent_output(result)
@@ -596,6 +697,19 @@ class TripPlannerWorkflow:
     def _parse_location(self, raw_location: Any) -> Optional[Location]:
         """安全解析经纬度，缺失或非法时返回 None"""
         if not raw_location or not isinstance(raw_location, dict):
+            return None
+        
+        if isinstance(raw_location, str) and "," in raw_location:
+            try:
+                parts = raw_location.split(",")
+                return Location(
+                    longitude=float(parts[0].strip()),
+                    latitude=float(parts[1].strip())
+                )
+            except (ValueError, IndexError):
+                return None
+
+        if not isinstance(raw_location, dict):
             return None
 
         longitude = raw_location.get("longitude")

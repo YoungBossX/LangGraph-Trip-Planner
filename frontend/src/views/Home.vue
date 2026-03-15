@@ -58,6 +58,7 @@
                   size="large"
                   class="custom-input"
                   placeholder="选择日期"
+                  :disabled-date="disabledStartDate"
                 />
               </a-form-item>
             </a-col>
@@ -72,6 +73,7 @@
                   size="large"
                   class="custom-input"
                   placeholder="选择日期"
+                  :disabled-date="disabledEndDate"
                 />
               </a-form-item>
             </a-col>
@@ -210,6 +212,16 @@ import { message } from 'ant-design-vue'
 import { generateTripPlan } from '@/services/api'
 import type { TripFormData } from '@/types'
 import type { Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
+
+const disabledStartDate = (current: Dayjs) => {return current && current < dayjs().startOf('day')}
+
+const disabledEndDate = (current: Dayjs) => {
+  if (!formData.start_date) {
+    return current && current < dayjs().startOf('day')
+  }
+  return current && current < formData.start_date.startOf('day')
+}
 
 const router = useRouter()
 const loading = ref(false)
