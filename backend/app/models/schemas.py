@@ -1,6 +1,6 @@
 """数据模型定义"""
-
-from typing import List, Optional, Union
+import re
+from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 # ============ 请求模型 ============
@@ -12,8 +12,8 @@ class TripRequest(BaseModel):
     travel_days: int = Field(..., description="旅行天数", ge=1, le=30, example=3)
     transportation: str = Field(..., description="交通方式", example="公共交通")
     accommodation: str = Field(..., description="住宿偏好", example="经济型酒店")
-    preferences: List[str] = Field(default=[], description="旅行偏好标签", example=["历史文化", "美食"])
-    free_text_input: Optional[str] = Field(default="", description="额外要求", example="希望多安排一些博物馆")
+    preferences: List[str] = Field(default_factory=list, description="旅行偏好标签", example=["历史文化", "美食"])
+    free_text_input: str = Field(default="", description="额外要求", example="希望多安排一些博物馆")
     
     class Config:
         json_schema_extra = {
@@ -50,18 +50,34 @@ class Location(BaseModel):
     latitude: float = Field(..., description="纬度")
 
 class Attraction(BaseModel):
-    """景点信息"""
     name: str = Field(..., description="景点名称")
     address: str = Field(..., description="地址")
-    location: Location = Field(..., description="经纬度坐标")
-    visit_duration: int = Field(..., description="建议游览时间(分钟)")
-    description: str = Field(..., description="景点描述")
-    category: Optional[str] = Field(default="景点", description="景点类别")
+    location: Optional[Location] = Field(default=None, description="经纬度坐标")
+    visit_duration: int = Field(0, description="建议游览时间(分钟)")
+    description: str = Field("", description="景点描述")
+    category: str = Field(default="景点", description="景点类别")
     rating: Optional[float] = Field(default=None, description="评分")
-    photos: Optional[List[str]] = Field(default_factory=list, description="景点图片URL列表")
-    poi_id: Optional[str] = Field(default="", description="POI ID")
+    photos: List[str] = Field(default_factory=list, description="景点图片URL列表")
+    poi_id: Optional[str] = Field(default=None, description="POI ID")
     image_url: Optional[str] = Field(default=None, description="图片URL")
     ticket_price: int = Field(default=0, description="门票价格(元)")
+    price_text: str = Field(default="", description="价格描述，如人均消费/票价区间")
+
+    @field_validator("ticket_price", mode="before")
+    @classmethod
+    def parse_ticket_price(cls, v):
+        if v is None or v == "":
+            return 0
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float):
+            return int(v)
+        if isinstance(v, str):
+            nums = re.findall(r"\d+", v)
+            if nums:
+                return int(nums[0])
+            return 0
+        return 0
 
 class Meal(BaseModel):
     """餐饮信息"""
@@ -78,7 +94,7 @@ class Hotel(BaseModel):
     address: str = Field(default="", description="酒店地址")
     location: Optional[Location] = Field(default=None, description="酒店位置")
     price_range: str = Field(default="", description="价格范围")
-    rating: str = Field(default="", description="评分")
+    rating: Optional[float] = Field(default=None, description="评分")
     distance: str = Field(default="", description="距离景点距离")
     type: str = Field(default="", description="酒店类型")
     estimated_cost: int = Field(default=0, description="预估费用(元/晚)")
@@ -91,31 +107,30 @@ class DayPlan(BaseModel):
     transportation: str = Field(..., description="交通方式")
     accommodation: str = Field(..., description="住宿")
     hotel: Optional[Hotel] = Field(default=None, description="推荐酒店")
-    attractions: List[Attraction] = Field(default=[], description="景点列表")
-    meals: List[Meal] = Field(default=[], description="餐饮列表")
+    attractions: List[Attraction] = Field(default_factory=list, description="景点列表")
+    meals: List[Meal] = Field(default_factory=list, description="餐饮列表")
 
 class WeatherInfo(BaseModel):
     """天气信息"""
     date: str = Field(..., description="日期 YYYY-MM-DD")
     day_weather: str = Field(default="", description="白天天气")
     night_weather: str = Field(default="", description="夜间天气")
-    day_temp: Union[int, str] = Field(default=0, description="白天温度")
-    night_temp: Union[int, str] = Field(default=0, description="夜间温度")
+    day_temp: int = Field(default=0, description="白天温度")
+    night_temp: int = Field(default=0, description="夜间温度")
     wind_direction: str = Field(default="", description="风向")
     wind_power: str = Field(default="", description="风力")
 
-    @field_validator('day_temp', 'night_temp', mode='before')
+    @field_validator("day_temp", "night_temp", mode="before")
     @classmethod
     def parse_temperature(cls, v):
-        """解析温度,移除°C等单位"""
+        """解析温度，移除°C等单位"""
         if isinstance(v, str):
-            # 移除°C, ℃等单位符号
-            v = v.replace('°C', '').replace('℃', '').replace('°', '').strip()
+            v = v.replace("°C", "").replace("℃", "").replace("°", "").strip()
             try:
                 return int(v)
             except ValueError:
                 return 0
-        return v
+        return int(v) if v is not None else 0
 
 class Budget(BaseModel):
     """预算信息"""
@@ -130,9 +145,9 @@ class TripPlan(BaseModel):
     city: str = Field(..., description="目的地城市")
     start_date: str = Field(..., description="开始日期")
     end_date: str = Field(..., description="结束日期")
-    days: List[DayPlan] = Field(..., description="每日行程")
-    weather_info: List[WeatherInfo] = Field(default=[], description="天气信息")
-    overall_suggestions: str = Field(..., description="总体建议")
+    days: List[DayPlan] = Field(default_factory=list, description="每日行程")
+    weather_info: List[WeatherInfo] = Field(default_factory=list, description="天气信息")
+    overall_suggestions: str = Field(default="", description="总体建议")
     budget: Optional[Budget] = Field(default=None, description="预算信息")
 
 class TripPlanResponse(BaseModel):
@@ -140,6 +155,25 @@ class TripPlanResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
     message: str = Field(default="", description="消息")
     data: Optional[TripPlan] = Field(default=None, description="旅行计划数据")
+
+class AttractionSearchResult(BaseModel):
+    """景点搜索Agent输出"""
+    attractions: List[Attraction] = Field(default_factory=list, description="推荐景点列表")
+    summary: str = Field(default="", description="景点推荐简述")
+
+class WeatherSearchResult(BaseModel):
+    """天气查询Agent输出"""
+    weather_info: List[WeatherInfo] = Field(default_factory=list, description="天气信息列表")
+    summary: str = Field(default="", description="天气总结与建议")
+
+class HotelSearchResult(BaseModel):
+    """酒店搜索Agent输出"""
+    hotels: List[Hotel] = Field(default_factory=list, description="推荐酒店列表")
+    summary: str = Field(default="", description="酒店推荐简述")
+
+class ItineraryPlanResult(BaseModel):
+    """行程规划Agent输出"""
+    trip_plan: TripPlan = Field(..., description="完整旅行计划")
 
 class POIInfo(BaseModel):
     """POI信息"""
@@ -154,7 +188,7 @@ class POISearchResponse(BaseModel):
     """POI搜索响应"""
     success: bool = Field(..., description="是否成功")
     message: str = Field(default="", description="消息")
-    data: List[POIInfo] = Field(default=[], description="POI列表")
+    data: List[POIInfo] = Field(default_factory=list, description="POI列表")
 
 class RouteInfo(BaseModel):
     """路线信息"""
@@ -173,7 +207,7 @@ class WeatherResponse(BaseModel):
     """天气查询响应"""
     success: bool = Field(..., description="是否成功")
     message: str = Field(default="", description="消息")
-    data: List[WeatherInfo] = Field(default=[], description="天气信息")
+    data: List[WeatherInfo] = Field(default_factory=list, description="天气信息")
 
 # ============ 错误响应 ============
 class ErrorResponse(BaseModel):

@@ -91,9 +91,9 @@ class TripPlannerWorkflow:
                         content = msg.get("content", "")
                         # 如果 content 是字典，转换为字符串
                         if isinstance(content, dict):
-                            import json
                             content = json.dumps(content, ensure_ascii=False)
-                        return str(content)
+                        if content:
+                            return str(content)
                 else:
                     # 处理 LangChain 消息对象 (AIMessage, HumanMessage 等)
                     # 尝试获取消息类型
@@ -451,12 +451,13 @@ class TripPlannerWorkflow:
                 for item in data:
                     if isinstance(item, dict):
                         # 转换为Attraction对象
+                        loc = item.get("location") or {}
                         attraction = Attraction(
                             name=item.get("name", ""),
                             address=item.get("address", ""),
                             location=Location(
-                                longitude=item.get("location", {}).get("longitude", 0.0),
-                                latitude=item.get("location", {}).get("latitude", 0.0)
+                                longitude=float(loc.get("longitude") or 0.0),
+                                latitude=float(loc.get("latitude") or 0.0)
                             ),
                             visit_duration=item.get("visit_duration", 120),
                             description=item.get("description", ""),
@@ -510,12 +511,13 @@ class TripPlannerWorkflow:
             if isinstance(data, list):
                 for item in data:
                     if isinstance(item, dict):
+                        loc = item.get("location") or {}
                         hotel = Hotel(
                             name=item.get("name", ""),
                             address=item.get("address", ""),
                             location=Location(
-                                longitude=item.get("location", {}).get("longitude", 0.0),
-                                latitude=item.get("location", {}).get("latitude", 0.0)
+                                longitude=float(loc.get("longitude") or 0.0),
+                                latitude=float(loc.get("latitude") or 0.0)
                             ) if item.get("location") else None,
                             price_range=item.get("price_range", ""),
                             rating=item.get("rating", ""),
