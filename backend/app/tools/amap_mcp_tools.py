@@ -99,6 +99,9 @@ def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
 async def create_amap_mcp_tools() -> List[BaseTool]:
     """创建高德地图MCP工具列表"""
     settings = get_settings()
+    
+    print(f"[DEBUG] amap_api_key = '{settings.amap_api_key}'")
+    print(f"[DEBUG] amap_api_key 长度 = {len(settings.amap_api_key)}")
 
     # 验证必要的配置
     if not settings.amap_api_key:

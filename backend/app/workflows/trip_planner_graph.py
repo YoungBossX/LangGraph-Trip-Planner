@@ -179,51 +179,60 @@ class TripPlannerWorkflow:
         return workflow.compile()
 
     def _search_attractions(self, state: TripPlannerState) -> Dict[str, Any]:
-        """搜索景点节点"""
         logger.info("📍 搜索景点...")
         try:
-            # 构建查询
             query = self._build_attraction_query(state["request"])
+            logger.info(f"查询内容: {query}")
 
-            # 执行智能体
             result = self.attraction_agent.invoke(
-                self._prepare_agent_input(query, [])
+                self._prepare_agent_input(query, []),
+                config={"recursion_limit": 8}
             )
 
-            # 更新状态
             output = self._extract_agent_output(result)
+            logger.info(f"Agent 输出前300字符: {output[:300]}")
+
             attractions = self._parse_attractions(output)
+            logger.info(f"解析到 {len(attractions)} 个景点")
+
+            if not attractions:
+                logger.warning("未解析到任何景点，将使用备用数据")
 
             return {
                 "attractions": attractions,
                 "messages": [{"role": "assistant", "content": f"已找到 {len(attractions)} 个景点"}]
             }
-
         except Exception as e:
             logger.error(f"景点搜索失败: {str(e)}", exc_info=True)
             return {
                 "error": f"景点搜索失败: {str(e)}",
                 "current_step": "error"
-            }
+        }
 
     def _check_weather(self, state: TripPlannerState) -> Dict[str, Any]:
-        """查询天气节点"""
         logger.info("🌤️  查询天气...")
         try:
             query = f"查询{state['request'].city}的天气信息"
+            logger.info(f"查询内容: {query}")
 
             result = self.weather_agent.invoke(
-                self._prepare_agent_input(query, [])
+                self._prepare_agent_input(query, []),
+                config={"recursion_limit": 8}
             )
 
             output = self._extract_agent_output(result)
+            logger.info(f"Agent 输出前300字符: {output[:300]}")
+
             weather_info = self._parse_weather(output)
+            logger.info(f"解析到 {len(weather_info)} 天天气信息")
+
+            if not weather_info:
+                logger.warning("未解析到天气信息")
 
             return {
                 "weather_info": weather_info,
                 "messages": [{"role": "assistant", "content": f"已获取 {len(weather_info)} 天天气信息"}]
             }
-
         except Exception as e:
             logger.error(f"天气查询失败: {str(e)}", exc_info=True)
             return {
@@ -232,24 +241,30 @@ class TripPlannerWorkflow:
             }
 
     def _find_hotels(self, state: TripPlannerState) -> Dict[str, Any]:
-        """搜索酒店节点"""
         logger.info("🏨 搜索酒店...")
         try:
             query = f"搜索{state['request'].city}的{state['request'].accommodation}酒店"
+            logger.info(f"查询内容: {query}")
 
             result = self.hotel_agent.invoke(
-                self._prepare_agent_input(query, [])
+                self._prepare_agent_input(query, []),
+                config={"recursion_limit": 8}
             )
 
             output = self._extract_agent_output(result)
+            logger.info(f"Agent 输出前300字符: {output[:300]}")
+
             hotels = self._parse_hotels(output)
+            logger.info(f"解析到 {len(hotels)} 个酒店")
+
+            if not hotels:
+                logger.warning("未解析到酒店信息")
 
             return {
                 "hotels": hotels,
                 "current_step": "hotels_found",
                 "messages": [{"role": "assistant", "content": f"已找到 {len(hotels)} 个酒店"}]
             }
-
         except Exception as e:
             logger.error(f"酒店搜索失败: {str(e)}", exc_info=True)
             return {
@@ -258,30 +273,32 @@ class TripPlannerWorkflow:
             }
 
     def _plan_itinerary(self, state: TripPlannerState) -> Dict[str, Any]:
-        """生成行程计划节点"""
         logger.info("📋 生成行程计划...")
         try:
-            # 构建规划查询
             query = self._build_planner_query(
                 state["request"],
                 state["attractions"],
                 state["weather_info"],
                 state["hotels"]
             )
+            logger.info(f"传给 planner 的景点数: {len(state['attractions'])}, 天气数: {len(state['weather_info'])}, 酒店数: {len(state['hotels'])}")
 
             result = self.planner_agent.invoke(
-                self._prepare_agent_input(query, [])
+                self._prepare_agent_input(query, []),
+                config={"recursion_limit": 8}
             )
 
             output = self._extract_agent_output(result)
+            logger.info(f"Planner 输出前300字符: {output[:300]}")
+
             trip_plan = self._parse_trip_plan(output, state["request"])
+            logger.info(f"解析到 {len(trip_plan.days)} 天行程")
 
             return {
                 "trip_plan": trip_plan,
                 "current_step": "plan_completed",
                 "messages": [{"role": "assistant", "content": "行程计划生成完成！"}]
             }
-
         except Exception as e:
             logger.error(f"行程规划失败: {str(e)}", exc_info=True)
             return {
@@ -290,15 +307,12 @@ class TripPlannerWorkflow:
             }
 
     def _handle_error(self, state: TripPlannerState) -> Dict[str, Any]:
-        """错误处理节点"""
         error_msg = state.get('error', '未知错误')
         logger.warning(f"⚠️  处理错误: {error_msg}")
-
-        # 创建备用计划
         fallback_plan = self._create_fallback_plan(state["request"])
-
         return {
             "trip_plan": fallback_plan,
+            "error": None,
             "current_step": "error_handled",
             "messages": [{"role": "assistant", "content": f"遇到错误，已生成备用计划: {error_msg}"}]
         }
@@ -310,17 +324,54 @@ class TripPlannerWorkflow:
     # ============ 辅助方法（从原 trip_planner_agent.py 迁移）============
 
     def _build_attraction_query(self, request: TripRequest) -> str:
-        """构建景点搜索查询"""
         if request.preferences:
-            keywords = request.preferences[0]
+            keywords = "、".join(request.preferences)
         else:
             keywords = "景点"
-
-        return f"请搜索{request.city}的{keywords}相关景点"
+        return f"搜索{request.city}的{keywords}相关景点，返回6-8个结果"
 
     def _build_planner_query(self, request: TripRequest, attractions: List[Attraction],
-                            weather: List[WeatherInfo], hotels: List[Hotel]) -> str:
+                        weather: List[WeatherInfo], hotels: List[Hotel]) -> str:
         """构建行程规划查询"""
+        # 把景点信息序列化为完整 JSON
+        attractions_data = []
+        for a in attractions:
+            attractions_data.append({
+                "name": a.name,
+                "address": a.address,
+                "location": {"longitude": a.location.longitude, "latitude": a.location.latitude} if a.location else None,
+                "visit_duration": a.visit_duration,
+                "description": a.description,
+                "category": a.category,
+                "ticket_price": a.ticket_price if hasattr(a, 'ticket_price') else 0
+            })
+
+        # 把天气信息序列化
+        weather_data = []
+        for w in weather:
+            weather_data.append({
+                "date": w.date,
+                "day_weather": w.day_weather,
+                "night_weather": w.night_weather,
+                "day_temp": w.day_temp,
+                "night_temp": w.night_temp,
+                "wind_direction": w.wind_direction,
+                "wind_power": w.wind_power
+            })
+
+        # 把酒店信息序列化
+        hotels_data = []
+        for h in hotels:
+            hotels_data.append({
+                "name": h.name,
+                "address": h.address,
+                "location": {"longitude": h.location.longitude, "latitude": h.location.latitude} if h.location else None,
+                "price_range": h.price_range if hasattr(h, 'price_range') else "",
+                "rating": h.rating if hasattr(h, 'rating') else "",
+                "type": h.type if hasattr(h, 'type') else "",
+                "estimated_cost": h.estimated_cost if hasattr(h, 'estimated_cost') else 0
+            })
+
         query = f"""请根据以下信息生成{request.city}的{request.travel_days}天旅行计划:
 
 **基本信息:**
@@ -331,22 +382,22 @@ class TripPlannerWorkflow:
 - 住宿: {request.accommodation}
 - 偏好: {', '.join(request.preferences) if request.preferences else '无'}
 
-**景点信息:**
-已找到 {len(attractions)} 个景点，包括：{', '.join([a.name for a in attractions[:3]]) if attractions else '无'}
+**景点信息（共{len(attractions)}个）:**
+{json.dumps(attractions_data, ensure_ascii=False, indent=2)}
 
 **天气信息:**
-{len(weather)} 天天气预报
+{json.dumps(weather_data, ensure_ascii=False, indent=2)}
 
-**酒店信息:**
-已找到 {len(hotels)} 个酒店，包括：{', '.join([h.name for h in hotels[:2]]) if hotels else '无'}
+**酒店信息（共{len(hotels)}个）:**
+{json.dumps(hotels_data, ensure_ascii=False, indent=2)}
 
 **要求:**
-1. 每天安排2-3个景点
+1. 每天安排2-3个景点（从上面的景点中选择）
 2. 每天必须包含早中晚三餐
-3. 每天推荐一个具体的酒店(从酒店信息中选择)
+3. 每天推荐一个酒店（从上面的酒店中选择）
 4. 考虑景点之间的距离和交通方式
-5. 返回完整的JSON格式数据
-6. 景点的经纬度坐标要真实准确
+5. 景点的经纬度坐标使用上面提供的真实数据
+6. 必须包含预算汇总
 """
         if request.free_text_input:
             query += f"\n**额外要求:** {request.free_text_input}"
@@ -593,7 +644,10 @@ class TripPlannerWorkflow:
         initial_state: TripPlannerState = create_initial_state(request)
 
         # 执行工作流
-        final_state = self.graph.invoke(initial_state)
+        final_state = self.graph.invoke(
+            initial_state,
+            config={"recursion_limit": 50}
+        )
 
         # 检查结果
         if final_state.get("error") and not final_state.get("trip_plan"):

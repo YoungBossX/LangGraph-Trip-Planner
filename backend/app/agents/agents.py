@@ -11,58 +11,165 @@ logger = logging.getLogger(__name__)
 
 # ============ 智能体提示词 ============
 
-ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。你的任务是根据城市和用户偏好搜索合适的景点。
+# ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。你的任务是根据城市和用户偏好搜索合适的景点。
 
-**重要提示:**
-你必须使用工具来搜索景点!不要自己编造景点信息!
+# **重要提示:**
+# 你必须使用工具来搜索景点!不要自己编造景点信息!
 
-**可用工具:**
-{tools}
+# **可用工具:**
+# {tools}
 
-**工具调用要求:**
-1. 根据用户查询选择合适的工具
-2. 提供完整的参数
-3. 不要在没有工具的情况下直接回答
-4. 工具调用完成后，请直接返回工具返回的原始JSON数据，不要进行总结或格式化
-5. 返回的JSON应该是一个景点列表，每个景点包含name、address、location、visit_duration、description、category、ticket_price等字段
+# **工具调用要求:**
+# 1. 根据用户查询选择合适的工具
+# 2. 提供完整的参数
+# 3. 不要在没有工具的情况下直接回答
+# 4. 工具调用完成后，请直接返回工具返回的原始JSON数据，不要进行总结或格式化
+# 5. 返回的JSON应该是一个景点列表，每个景点包含name、address、location、visit_duration、description、category、ticket_price等字段
+# """
+
+ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。根据用户指定的城市和偏好，调用工具搜索景点信息。
+
+要求：
+1. 必须调用工具搜索，不要编造数据
+2. 搜索完成后，将工具返回的结果整理为 JSON 数组
+3. 每个景点包含：name、address、location（含 longitude 和 latitude）、visit_duration（分钟）、description、category、ticket_price
+4. 只调用一次搜索工具即可，不要反复搜索
 """
 
-WEATHER_AGENT_PROMPT = """你是天气查询专家。你的任务是查询指定城市的天气信息。
+# WEATHER_AGENT_PROMPT = """你是天气查询专家。你的任务是查询指定城市的天气信息。
 
-**重要提示:**
-你必须使用工具来查询天气!不要自己编造天气信息!
+# **重要提示:**
+# 你必须使用工具来查询天气!不要自己编造天气信息!
 
-**可用工具:**
-{tools}
+# **可用工具:**
+# {tools}
 
-**工具调用要求:**
-1. 根据用户查询选择合适的工具
-2. 提供完整的参数
-3. 不要在没有工具的情况下直接回答
-4. 工具调用完成后，请直接返回工具返回的原始JSON数据，不要进行总结或格式化
-5. 返回的JSON应该是一个天气信息列表，每个天气信息包含date、day_weather、night_weather、day_temp、night_temp、wind_direction、wind_power等字段
+# **工具调用要求:**
+# 1. 根据用户查询选择合适的工具
+# 2. 提供完整的参数
+# 3. 不要在没有工具的情况下直接回答
+# 4. 工具调用完成后，请直接返回工具返回的原始JSON数据，不要进行总结或格式化
+# 5. 返回的JSON应该是一个天气信息列表，每个天气信息包含date、day_weather、night_weather、day_temp、night_temp、wind_direction、wind_power等字段
+# """
+
+WEATHER_AGENT_PROMPT = """你是天气查询专家。根据用户指定的城市，调用工具查询天气信息。
+
+要求：
+1. 必须调用工具查询，不要编造数据
+2. 查询完成后，将工具返回的结果整理为 JSON 数组
+3. 每条天气包含：date、day_weather、night_weather、day_temp（纯数字）、night_temp（纯数字）、wind_direction、wind_power
+4. 只调用一次天气工具即可
 """
 
-HOTEL_AGENT_PROMPT = """你是酒店推荐专家。你的任务是根据城市和景点位置推荐合适的酒店。
+# HOTEL_AGENT_PROMPT = """你是酒店推荐专家。你的任务是根据城市和景点位置推荐合适的酒店。
 
-**重要提示:**
-你必须使用工具来搜索酒店!不要自己编造酒店信息!
+# **重要提示:**
+# 你必须使用工具来搜索酒店!不要自己编造酒店信息!
 
-**可用工具:**
-{tools}
+# **可用工具:**
+# {tools}
 
-**工具调用要求:**
-1. 根据用户查询选择合适的工具
-2. 提供完整的参数
-3. 不要在没有工具的情况下直接回答
-4. 关键词使用"酒店"或"宾馆"
-5. 工具调用完成后，请直接返回工具返回的原始JSON数据，不要进行总结或格式化
-6. 返回的JSON应该是一个酒店列表，每个酒店包含name、address、location、price_range、rating、distance、type、estimated_cost等字段
+# **工具调用要求:**
+# 1. 根据用户查询选择合适的工具
+# 2. 提供完整的参数
+# 3. 不要在没有工具的情况下直接回答
+# 4. 关键词使用"酒店"或"宾馆"
+# 5. 工具调用完成后，请直接返回工具返回的原始JSON数据，不要进行总结或格式化
+# 6. 返回的JSON应该是一个酒店列表，每个酒店包含name、address、location、price_range、rating、distance、type、estimated_cost等字段
+# """
+
+HOTEL_AGENT_PROMPT = """你是酒店推荐专家。根据用户指定的城市和住宿偏好，调用工具搜索酒店。
+
+要求：
+1. 必须调用工具搜索，不要编造数据
+2. 搜索关键词使用"酒店"或"宾馆"
+3. 搜索完成后，将工具返回的结果整理为 JSON 数组
+4. 每个酒店包含：name、address、location（含 longitude 和 latitude）、price_range、rating、type、estimated_cost
+5. 只调用一次搜索工具即可
 """
 
-PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点信息和天气信息,生成详细的旅行计划。
+# PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点信息和天气信息,生成详细的旅行计划。
 
-请严格按照以下JSON格式返回旅行计划:
+# 请严格按照以下JSON格式返回旅行计划:
+# ```json
+# {{
+#   "city": "城市名称",
+#   "start_date": "YYYY-MM-DD",
+#   "end_date": "YYYY-MM-DD",
+#   "days": [
+#     {{
+#       "date": "YYYY-MM-DD",
+#       "day_index": 0,
+#       "description": "第1天行程概述",
+#       "transportation": "交通方式",
+#       "accommodation": "住宿类型",
+#       "hotel": {{
+#         "name": "酒店名称",
+#         "address": "酒店地址",
+#         "location": {{"longitude": 116.397128, "latitude": 39.916527}},
+#         "price_range": "300-500元",
+#         "rating": "4.5",
+#         "distance": "距离景点2公里",
+#         "type": "经济型酒店",
+#         "estimated_cost": 400
+#       }},
+#       "attractions": [
+#         {{
+#           "name": "景点名称",
+#           "address": "详细地址",
+#           "location": {{"longitude": 116.397128, "latitude": 39.916527}},
+#           "visit_duration": 120,
+#           "description": "景点详细描述",
+#           "category": "景点类别",
+#           "ticket_price": 60
+#         }}
+#       ],
+#       "meals": [
+#         {{"type": "breakfast", "name": "早餐推荐", "description": "早餐描述", "estimated_cost": 30}},
+#         {{"type": "lunch", "name": "午餐推荐", "description": "午餐描述", "estimated_cost": 50}},
+#         {{"type": "dinner", "name": "晚餐推荐", "description": "晚餐描述", "estimated_cost": 80}}
+#       ]
+#     }}
+#   ],
+#   "weather_info": [
+#     {{
+#       "date": "YYYY-MM-DD",
+#       "day_weather": "晴",
+#       "night_weather": "多云",
+#       "day_temp": 25,
+#       "night_temp": 15,
+#       "wind_direction": "南风",
+#       "wind_power": "1-3级"
+#     }}
+#   ],
+#   "overall_suggestions": "总体建议",
+#   "budget": {{
+#     "total_attractions": 180,
+#     "total_hotels": 1200,
+#     "total_meals": 480,
+#     "total_transportation": 200,
+#     "total": 2060
+#   }}
+# }}
+# ```
+
+# **重要提示:**
+# 1. weather_info数组必须包含每一天的天气信息
+# 2. 温度必须是纯数字(不要带°C等单位)
+# 3. 每天安排2-3个景点
+# 4. 考虑景点之间的距离和游览时间
+# 5. 每天必须包含早中晚三餐
+# 6. 提供实用的旅行建议
+# 7. **必须包含预算信息**:
+#    - 景点门票价格(ticket_price)
+#    - 餐饮预估费用(estimated_cost)
+#    - 酒店预估费用(estimated_cost)
+#    - 预算汇总(budget)包含各项总费用
+# """
+
+PLANNER_AGENT_PROMPT = """你是行程规划专家。根据提供的景点、天气、酒店信息，生成详细的旅行计划。
+
+请严格按照以下 JSON 格式返回（不要添加任何额外文字，直接返回 JSON）：
 ```json
 {{
   "city": "城市名称",
@@ -72,34 +179,34 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点
     {{
       "date": "YYYY-MM-DD",
       "day_index": 0,
-      "description": "第1天行程概述",
+      "description": "当天行程概述",
       "transportation": "交通方式",
       "accommodation": "住宿类型",
       "hotel": {{
-        "name": "酒店名称",
-        "address": "酒店地址",
-        "location": {{"longitude": 116.397128, "latitude": 39.916527}},
+        "name": "酒店名",
+        "address": "地址",
+        "location": {{"longitude": 120.15, "latitude": 30.27}},
         "price_range": "300-500元",
         "rating": "4.5",
-        "distance": "距离景点2公里",
+        "distance": "距景点2km",
         "type": "经济型酒店",
         "estimated_cost": 400
       }},
       "attractions": [
         {{
-          "name": "景点名称",
-          "address": "详细地址",
-          "location": {{"longitude": 116.397128, "latitude": 39.916527}},
+          "name": "景点名",
+          "address": "地址",
+          "location": {{"longitude": 120.15, "latitude": 30.27}},
           "visit_duration": 120,
-          "description": "景点详细描述",
-          "category": "景点类别",
+          "description": "描述",
+          "category": "类别",
           "ticket_price": 60
         }}
       ],
       "meals": [
-        {{"type": "breakfast", "name": "早餐推荐", "description": "早餐描述", "estimated_cost": 30}},
-        {{"type": "lunch", "name": "午餐推荐", "description": "午餐描述", "estimated_cost": 50}},
-        {{"type": "dinner", "name": "晚餐推荐", "description": "晚餐描述", "estimated_cost": 80}}
+        {{"type": "breakfast", "name": "早餐", "description": "描述", "estimated_cost": 30}},
+        {{"type": "lunch", "name": "午餐", "description": "描述", "estimated_cost": 50}},
+        {{"type": "dinner", "name": "晚餐", "description": "描述", "estimated_cost": 80}}
       ]
     }}
   ],
@@ -125,18 +232,12 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点
 }}
 ```
 
-**重要提示:**
-1. weather_info数组必须包含每一天的天气信息
-2. 温度必须是纯数字(不要带°C等单位)
-3. 每天安排2-3个景点
-4. 考虑景点之间的距离和游览时间
-5. 每天必须包含早中晚三餐
-6. 提供实用的旅行建议
-7. **必须包含预算信息**:
-   - 景点门票价格(ticket_price)
-   - 餐饮预估费用(estimated_cost)
-   - 酒店预估费用(estimated_cost)
-   - 预算汇总(budget)包含各项总费用
+重要提示：
+1. 温度必须是纯数字，不带单位
+2. 每天安排 2-3 个景点
+3. 每天必须包含早中晚三餐
+4. 必须包含预算汇总
+5. 直接输出 JSON，不要用 ```json``` 包裹
 """
 
 
@@ -147,8 +248,10 @@ def create_attraction_search_agent(tools: List[BaseTool]):
         llm = get_llm()
 
         # 格式化系统提示词，包含工具信息
-        tools_description = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
-        system_prompt = ATTRACTION_AGENT_PROMPT.format(tools=tools_description)
+        # tools_description = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
+        # system_prompt = ATTRACTION_AGENT_PROMPT.format(tools=tools_description)
+
+        system_prompt = ATTRACTION_AGENT_PROMPT
 
         # 创建智能体图
         agent_graph = create_agent(
@@ -175,8 +278,9 @@ def create_weather_agent(tools: List[BaseTool]):
         llm = get_llm()
 
         # 格式化系统提示词，包含工具信息
-        tools_description = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
-        system_prompt = WEATHER_AGENT_PROMPT.format(tools=tools_description)
+        # tools_description = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
+        # system_prompt = WEATHER_AGENT_PROMPT.format(tools=tools_description)
+        system_prompt = WEATHER_AGENT_PROMPT
 
         # 创建智能体图
         agent_graph = create_agent(
@@ -202,8 +306,9 @@ def create_hotel_agent(tools: List[BaseTool]):
         llm = get_llm()
 
         # 格式化系统提示词，包含工具信息
-        tools_description = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
-        system_prompt = HOTEL_AGENT_PROMPT.format(tools=tools_description)
+        # tools_description = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
+        # system_prompt = HOTEL_AGENT_PROMPT.format(tools=tools_description)
+        system_prompt = HOTEL_AGENT_PROMPT
 
         # 创建智能体图
         agent_graph = create_agent(
@@ -227,10 +332,12 @@ def create_planner_agent(tools: List[BaseTool]):
         llm = get_llm()
 
         # 格式化系统提示词，包含工具信息（如果提示词中包含 {tools}）
-        tools_description = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
+        # tools_description = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
+        # system_prompt = PLANNER_AGENT_PROMPT
+        # if "{tools}" in system_prompt:
+        #     system_prompt = system_prompt.format(tools=tools_description)
+
         system_prompt = PLANNER_AGENT_PROMPT
-        if "{tools}" in system_prompt:
-            system_prompt = system_prompt.format(tools=tools_description)
 
         # 创建智能体图
         agent_graph = create_agent(

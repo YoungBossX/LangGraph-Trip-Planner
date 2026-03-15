@@ -30,8 +30,8 @@ def get_llm() -> BaseChatModel:
             base_url=base_url,
             model=model,
             temperature=0.7,
-            max_tokens=2000,
-            timeout=180.0,
+            max_tokens=4096,
+            timeout=60.0,
             max_retries=1
         )
 
