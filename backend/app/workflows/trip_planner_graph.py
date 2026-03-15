@@ -7,12 +7,7 @@ from datetime import datetime, timedelta
 from langgraph.graph import StateGraph, END
 
 from .trip_planner_state import TripPlannerState, create_initial_state
-from ..agents.agents import (
-    create_attraction_search_agent,
-    create_weather_agent,
-    create_hotel_agent,
-    create_planner_agent
-)
+from ..agents.agents import get_agent
 from ..tools.amap_mcp_tools import get_cached_amap_tools
 from ..models.schemas import (
     TripRequest, TripPlan, DayPlan, Attraction, Meal, WeatherInfo,
@@ -39,9 +34,6 @@ class TripPlannerWorkflow:
                 for tool in self.tools:
                     logger.debug(f"  工具: {tool.name} - {tool.description}")
 
-            # 创建智能体
-            logger.info("创建智能体...")
-
             # 按工具名过滤，每个 Agent 只拿需要的工具
             search_tools = [t for t in self.tools if "text_search" in t.name.lower()]
             weather_tools = [t for t in self.tools if "weather" in t.name.lower()]
@@ -49,10 +41,12 @@ class TripPlannerWorkflow:
             logger.info(f"搜索工具: {[t.name for t in search_tools]}")
             logger.info(f"天气工具: {[t.name for t in weather_tools]}")
 
-            self.attraction_agent = create_attraction_search_agent(search_tools if search_tools else self.tools)
-            self.weather_agent = create_weather_agent(weather_tools if weather_tools else self.tools)
-            self.hotel_agent = create_hotel_agent(search_tools if search_tools else self.tools)
-            self.planner_agent = create_planner_agent([])
+            # 创建智能体（统一使用 get_agent）
+            logger.info("创建智能体...")
+            self.attraction_agent = get_agent("attraction_search", search_tools if search_tools else self.tools)
+            self.weather_agent = get_agent("weather", weather_tools if weather_tools else self.tools)
+            self.hotel_agent = get_agent("hotel", search_tools if search_tools else self.tools)
+            self.planner_agent = get_agent("planner", [])
 
             # 构建工作流图
             logger.info("构建 StateGraph...")
@@ -74,6 +68,11 @@ class TripPlannerWorkflow:
         # 添加当前用户输入
         messages.append({"role": "user", "content": user_input})
         return {"messages": messages}
+
+    def _extract_structured_response(self, result: dict):
+        if isinstance(result, dict) and "structured_response" in result:
+            return result["structured_response"]
+        return None
 
     def _extract_agent_output(self, result: dict) -> str:
         """从智能体结果中提取输出文本
@@ -197,14 +196,20 @@ class TripPlannerWorkflow:
                 config={"recursion_limit": 25}
             )
 
-            output = self._extract_agent_output(result)
-            logger.info(f"Agent 输出前300字符: {output[:300]}")
+            structured = self._extract_structured_response(result)
 
-            attractions = self._parse_attractions(output)
-            logger.info(f"解析到 {len(attractions)} 个景点")
+            if structured is not None:
+                attractions = structured.attractions
+                logger.info(f"structured_response 返回 {len(attractions)} 个景点")
+            else:
+                output = self._extract_agent_output(result)
+                logger.info(f"回退到文本解析，Agent 输出前300字符: {output[:300]}")
+                attractions = self._parse_attractions(output)
 
-            if not attractions:
-                logger.warning("未解析到任何景点，将使用备用数据")
+            logger.info(f"最终保留 {len(attractions)} 个有效景点")
+
+            if len(attractions) == 0:
+                logger.warning("未解析到任何有效景点，后续将使用备用数据或降级结果")
 
             return {
                 "attractions": attractions,
@@ -228,14 +233,20 @@ class TripPlannerWorkflow:
                 config={"recursion_limit": 25}
             )
 
-            output = self._extract_agent_output(result)
-            logger.info(f"Agent 输出前300字符: {output[:300]}")
+            structured = self._extract_structured_response(result)
 
-            weather_info = self._parse_weather(output)
-            logger.info(f"解析到 {len(weather_info)} 天天气信息")
+            if structured is not None:
+                weather_info = structured.weather_info
+                logger.info(f"structured_response 返回 {len(weather_info)} 条天气")
+            else:
+                output = self._extract_agent_output(result)
+                logger.info(f"回退到文本解析，Agent 输出前300字符: {output[:300]}")
+                weather_info = self._parse_weather(output)
 
-            if not weather_info:
-                logger.warning("未解析到天气信息")
+            logger.info(f"最终保留 {len(weather_info)} 条有效天气信息")
+
+            if len(weather_info) == 0:
+                logger.warning("未解析到任何有效天气信息")
 
             return {
                 "weather_info": weather_info,
@@ -259,14 +270,20 @@ class TripPlannerWorkflow:
                 config={"recursion_limit": 25}
             )
 
-            output = self._extract_agent_output(result)
-            logger.info(f"Agent 输出前300字符: {output[:300]}")
+            structured = self._extract_structured_response(result)
 
-            hotels = self._parse_hotels(output)
-            logger.info(f"解析到 {len(hotels)} 个酒店")
+            if structured is not None:
+                hotels = structured.hotels
+                logger.info(f"structured_response 返回 {len(hotels)} 个酒店")
+            else:
+                output = self._extract_agent_output(result)
+                logger.info(f"回退到文本解析，Agent 输出前300字符: {output[:300]}")
+                hotels = self._parse_hotels(output)
 
-            if not hotels:
-                logger.warning("未解析到酒店信息")
+            logger.info(f"最终保留 {len(hotels)} 个有效酒店")
+
+            if len(hotels) == 0:
+                logger.warning("未解析到任何有效酒店信息")
 
             return {
                 "hotels": hotels,
@@ -296,10 +313,16 @@ class TripPlannerWorkflow:
                 config={"recursion_limit": 25}
             )
 
-            output = self._extract_agent_output(result)
-            logger.info(f"Planner 输出前300字符: {output[:300]}")
+            structured = self._extract_structured_response(result)
 
-            trip_plan = self._parse_trip_plan(output, state["request"])
+            if structured is not None:
+                trip_plan = structured.trip_plan
+                logger.info(f"structured_response 返回 {len(trip_plan.days)} 天行程")
+            else:
+                output = self._extract_agent_output(result)
+                logger.info(f"回退到文本解析，Planner 输出前300字符: {output[:300]}")
+                trip_plan = self._parse_trip_plan(output, state["request"])
+
             logger.info(f"解析到 {len(trip_plan.days)} 天行程")
 
             return {
@@ -345,14 +368,15 @@ class TripPlannerWorkflow:
         attractions_data = []
         for a in attractions:
             attractions_data.append({
-                "name": a.name,
-                "address": a.address,
-                "location": {"longitude": a.location.longitude, "latitude": a.location.latitude} if a.location else None,
-                "visit_duration": a.visit_duration,
-                "description": a.description,
-                "category": a.category,
-                "ticket_price": a.ticket_price if hasattr(a, 'ticket_price') else 0
-            })
+            "name": a.name,
+            "address": a.address,
+            "location": {"longitude": a.location.longitude, "latitude": a.location.latitude} if a.location else None,
+            "visit_duration": a.visit_duration,
+            "description": a.description,
+            "category": a.category,
+            "ticket_price": a.ticket_price if hasattr(a, "ticket_price") else 0,
+            "price_text": a.price_text if hasattr(a, "price_text") else ""
+        })
 
         # 把天气信息序列化
         weather_data = []
@@ -437,163 +461,457 @@ class TripPlannerWorkflow:
             # 如果没有找到JSON，返回原始响应
             json_str = response.strip()
         return json_str
+    
+    def _parse_location(self, raw_location: Any) -> Optional[Location]:
+        """安全解析经纬度，缺失或非法时返回 None"""
+        if not raw_location or not isinstance(raw_location, dict):
+            return None
+
+        longitude = raw_location.get("longitude")
+        latitude = raw_location.get("latitude")
+
+        if longitude in (None, "") or latitude in (None, ""):
+            return None
+
+        try:
+            return Location(
+                longitude=float(longitude),
+                latitude=float(latitude)
+            )
+        except (TypeError, ValueError):
+            return None
 
     def _parse_attractions(self, response: str) -> List[Attraction]:
-        """解析景点信息"""
+        """解析景点信息（逐条容错）"""
+        json_str = ""
+
         try:
-            # 尝试从响应中提取JSON
             json_str = self._extract_json(response)
             data = json.loads(json_str)
-
-            # 假设数据是景点列表
-            attractions = []
-            if isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict):
-                        # 转换为Attraction对象
-                        loc = item.get("location") or {}
-                        attraction = Attraction(
-                            name=item.get("name", ""),
-                            address=item.get("address", ""),
-                            location=Location(
-                                longitude=float(loc.get("longitude") or 0.0),
-                                latitude=float(loc.get("latitude") or 0.0)
-                            ),
-                            visit_duration=item.get("visit_duration", 120),
-                            description=item.get("description", ""),
-                            category=item.get("category", "景点"),
-                            ticket_price=item.get("ticket_price", 0)
-                        )
-                        attractions.append(attraction)
-            return attractions
         except Exception as e:
-            logger.error(f"解析景点信息失败: {str(e)}")
+            logger.error(f"解析景点 JSON 失败: {str(e)}")
             logger.error(f"原始响应长度: {len(response)}")
             logger.error(f"原始响应前500字符: {response[:500]}")
-            logger.error(f"提取的JSON字符串长度: {len(json_str) if 'json_str' in locals() else 'N/A'}")
-            if 'json_str' in locals():
+            if json_str:
                 logger.error(f"提取的JSON字符串前500字符: {json_str[:500]}")
-            # 返回空列表或示例数据
             return []
+
+        # 兼容两种格式：
+        # 1. 顶层直接是 list
+        # 2. 顶层是 {"attractions": [...]}
+        if isinstance(data, dict):
+            data = data.get("attractions", [])
+
+        if not isinstance(data, list):
+            logger.warning(f"景点数据不是列表，实际类型: {type(data).__name__}")
+            return []
+
+        attractions: List[Attraction] = []
+        skipped_count = 0
+
+        for idx, item in enumerate(data):
+            if not isinstance(item, dict):
+                skipped_count += 1
+                logger.warning(f"跳过第 {idx+1} 条景点：数据不是对象，实际类型={type(item).__name__}")
+                continue
+
+            try:
+                raw_ticket_price = item.get("ticket_price", 0)
+                price_text = item.get("price_text", "")
+
+                # 如果 ticket_price 原始值是字符串，且 price_text 为空，则保留原始价格文本
+                if isinstance(raw_ticket_price, str) and not price_text:
+                    price_text = raw_ticket_price
+
+                attraction = Attraction(
+                    name=item.get("name", ""),
+                    address=item.get("address", ""),
+                    location=self._parse_location(item.get("location")),
+                    visit_duration=item.get("visit_duration", 120),
+                    description=item.get("description", ""),
+                    category=item.get("category", "景点"),
+                    rating=item.get("rating"),
+                    photos=item.get("photos", []) or [],
+                    poi_id=item.get("poi_id"),
+                    image_url=item.get("image_url"),
+                    ticket_price=raw_ticket_price,
+                    price_text=price_text,
+                )
+
+                if not attraction.name.strip():
+                    skipped_count += 1
+                    logger.warning(f"跳过第 {idx+1} 条景点：name 为空，item={item}")
+                    continue
+
+                attractions.append(attraction)
+
+            except Exception as e:
+                skipped_count += 1
+                logger.warning(
+                    f"跳过第 {idx+1} 条景点解析失败: {str(e)}; "
+                    f"name={item.get('name', '未知')}; item={item}"
+                )
+                continue
+
+        logger.info(f"景点解析完成：成功 {len(attractions)} 条，跳过 {skipped_count} 条")
+        return attractions
 
     def _parse_weather(self, response: str) -> List[WeatherInfo]:
-        """解析天气信息"""
+        """解析天气信息（逐条容错）"""
+        json_str = ""
+
         try:
             json_str = self._extract_json(response)
             data = json.loads(json_str)
-
-            weather_info = []
-            if isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict):
-                        weather = WeatherInfo(
-                            date=item.get("date", ""),
-                            day_weather=item.get("day_weather", ""),
-                            night_weather=item.get("night_weather", ""),
-                            day_temp=item.get("day_temp", 0),
-                            night_temp=item.get("night_temp", 0),
-                            wind_direction=item.get("wind_direction", ""),
-                            wind_power=item.get("wind_power", "")
-                        )
-                        weather_info.append(weather)
-            return weather_info
         except Exception as e:
-            logger.error(f"解析天气信息失败: {str(e)}")
+            logger.error(f"解析天气 JSON 失败: {str(e)}")
+            logger.error(f"原始响应长度: {len(response)}")
+            logger.error(f"原始响应前500字符: {response[:500]}")
+            if json_str:
+                logger.error(f"提取的JSON字符串前500字符: {json_str[:500]}")
             return []
+
+        # 兼容两种格式：
+        # 1. 顶层直接是 list
+        # 2. 顶层是 {"weather_info": [...]}
+        if isinstance(data, dict):
+            data = data.get("weather_info", [])
+
+        if not isinstance(data, list):
+            logger.warning(f"天气数据不是列表，实际类型: {type(data).__name__}")
+            return []
+
+        weather_info: List[WeatherInfo] = []
+        skipped_count = 0
+
+        for idx, item in enumerate(data):
+            if not isinstance(item, dict):
+                skipped_count += 1
+                logger.warning(f"跳过第 {idx+1} 条天气：数据不是对象，实际类型={type(item).__name__}")
+                continue
+
+            try:
+                weather = WeatherInfo(
+                    date=item.get("date", ""),
+                    day_weather=item.get("day_weather", ""),
+                    night_weather=item.get("night_weather", ""),
+                    day_temp=item.get("day_temp", 0),
+                    night_temp=item.get("night_temp", 0),
+                    wind_direction=item.get("wind_direction", ""),
+                    wind_power=item.get("wind_power", "")
+                )
+
+                if not weather.date.strip():
+                    skipped_count += 1
+                    logger.warning(f"跳过第 {idx+1} 条天气：date 为空，item={item}")
+                    continue
+
+                weather_info.append(weather)
+
+            except Exception as e:
+                skipped_count += 1
+                logger.warning(
+                    f"跳过第 {idx+1} 条天气解析失败: {str(e)}; "
+                    f"date={item.get('date', '未知')}; item={item}"
+                )
+                continue
+
+        logger.info(f"天气解析完成：成功 {len(weather_info)} 条，跳过 {skipped_count} 条")
+        return weather_info
 
     def _parse_hotels(self, response: str) -> List[Hotel]:
-        """解析酒店信息"""
+        """解析酒店信息（逐条容错）"""
+        json_str = ""
+
         try:
             json_str = self._extract_json(response)
             data = json.loads(json_str)
-
-            hotels = []
-            if isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict):
-                        loc = item.get("location") or {}
-                        hotel = Hotel(
-                            name=item.get("name", ""),
-                            address=item.get("address", ""),
-                            location=Location(
-                                longitude=float(loc.get("longitude") or 0.0),
-                                latitude=float(loc.get("latitude") or 0.0)
-                            ) if item.get("location") else None,
-                            price_range=item.get("price_range", ""),
-                            rating=item.get("rating", ""),
-                            distance=item.get("distance", ""),
-                            type=item.get("type", ""),
-                            estimated_cost=item.get("estimated_cost", 0)
-                        )
-                        hotels.append(hotel)
-            return hotels
         except Exception as e:
-            logger.error(f"解析酒店信息失败: {str(e)}")
+            logger.error(f"解析酒店 JSON 失败: {str(e)}")
+            logger.error(f"原始响应长度: {len(response)}")
+            logger.error(f"原始响应前500字符: {response[:500]}")
+            if json_str:
+                logger.error(f"提取的JSON字符串前500字符: {json_str[:500]}")
             return []
 
+        # 兼容两种格式：
+        # 1. 顶层直接是 list
+        # 2. 顶层是 {"hotels": [...]}
+        if isinstance(data, dict):
+            data = data.get("hotels", [])
+
+        if not isinstance(data, list):
+            logger.warning(f"酒店数据不是列表，实际类型: {type(data).__name__}")
+            return []
+
+        hotels: List[Hotel] = []
+        skipped_count = 0
+
+        for idx, item in enumerate(data):
+            if not isinstance(item, dict):
+                skipped_count += 1
+                logger.warning(f"跳过第 {idx+1} 条酒店：数据不是对象，实际类型={type(item).__name__}")
+                continue
+
+            try:
+                hotel = Hotel(
+                    name=item.get("name", ""),
+                    address=item.get("address", ""),
+                    location=self._parse_location(item.get("location")),
+                    price_range=item.get("price_range", ""),
+                    rating=item.get("rating"),
+                    distance=item.get("distance", ""),
+                    type=item.get("type", ""),
+                    estimated_cost=item.get("estimated_cost", 0)
+                )
+
+                if not hotel.name.strip():
+                    skipped_count += 1
+                    logger.warning(f"跳过第 {idx+1} 条酒店：name 为空，item={item}")
+                    continue
+
+                hotels.append(hotel)
+
+            except Exception as e:
+                skipped_count += 1
+                logger.warning(
+                    f"跳过第 {idx+1} 条酒店解析失败: {str(e)}; "
+                    f"name={item.get('name', '未知')}; item={item}"
+                )
+                continue
+
+        logger.info(f"酒店解析完成：成功 {len(hotels)} 条，跳过 {skipped_count} 条")
+        return hotels
+
     def _parse_trip_plan(self, response: str, request: TripRequest) -> TripPlan:
-        """解析行程计划"""
+        """解析行程计划（逐段/逐条容错）"""
+        json_str = ""
+
         try:
             json_str = self._extract_json(response)
             data = json.loads(json_str)
-
-            # 转换为TripPlan对象
-            trip_plan = TripPlan(
-                city=data.get("city", request.city),
-                start_date=data.get("start_date", request.start_date),
-                end_date=data.get("end_date", request.end_date),
-                days=[],
-                weather_info=[],
-                overall_suggestions=data.get("overall_suggestions", ""),
-                budget=None
-            )
-
-            # 解析天气信息
-            for weather_data in data.get("weather_info", []):
-                weather_info = WeatherInfo(**weather_data)
-                trip_plan.weather_info.append(weather_info)
-
-            # 解析每日行程
-            for day_data in data.get("days", []):
-                # 解析景点
-                attractions = []
-                for attr_data in day_data.get("attractions", []):
-                    attraction = Attraction(**attr_data)
-                    attractions.append(attraction)
-
-                # 解析餐饮
-                meals = []
-                for meal_data in day_data.get("meals", []):
-                    meal = Meal(**meal_data)
-                    meals.append(meal)
-
-                # 解析酒店
-                hotel_data = day_data.get("hotel")
-                hotel = Hotel(**hotel_data) if hotel_data else None
-
-                day_plan = DayPlan(
-                    date=day_data.get("date", ""),
-                    day_index=day_data.get("day_index", 0),
-                    description=day_data.get("description", ""),
-                    transportation=day_data.get("transportation", request.transportation),
-                    accommodation=day_data.get("accommodation", request.accommodation),
-                    hotel=hotel,
-                    attractions=attractions,
-                    meals=meals
-                )
-                trip_plan.days.append(day_plan)
-
-            # 解析预算
-            budget_data = data.get("budget")
-            if budget_data:
-                budget = Budget(**budget_data)
-                trip_plan.budget = budget
-
-            return trip_plan
         except Exception as e:
-            logger.error(f"解析行程计划失败: {str(e)}")
-            # 返回备用计划
+            logger.error(f"解析行程计划 JSON 失败: {str(e)}")
+            logger.error(f"原始响应长度: {len(response)}")
+            logger.error(f"原始响应前500字符: {response[:500]}")
+            if json_str:
+                logger.error(f"提取的JSON字符串前500字符: {json_str[:500]}")
             return self._create_fallback_plan(request)
+
+        # 兼容两种格式：
+        # 1. 顶层直接就是 TripPlan
+        # 2. 顶层是 {"trip_plan": {...}}
+        if isinstance(data, dict) and isinstance(data.get("trip_plan"), dict):
+            data = data["trip_plan"]
+
+        if not isinstance(data, dict):
+            logger.error(f"行程计划数据不是对象，实际类型: {type(data).__name__}")
+            return self._create_fallback_plan(request)
+
+        trip_plan = TripPlan(
+            city=data.get("city", request.city),
+            start_date=data.get("start_date", request.start_date),
+            end_date=data.get("end_date", request.end_date),
+            days=[],
+            weather_info=[],
+            overall_suggestions=data.get("overall_suggestions", ""),
+            budget=None
+        )
+
+        # 1) 解析天气信息（逐条容错）
+        weather_list = data.get("weather_info", [])
+        if isinstance(weather_list, list):
+            skipped_weather = 0
+            for idx, weather_data in enumerate(weather_list):
+                if not isinstance(weather_data, dict):
+                    skipped_weather += 1
+                    logger.warning(f"跳过第 {idx+1} 条天气：数据不是对象")
+                    continue
+
+                try:
+                    weather_info = WeatherInfo(
+                        date=weather_data.get("date", ""),
+                        day_weather=weather_data.get("day_weather", ""),
+                        night_weather=weather_data.get("night_weather", ""),
+                        day_temp=weather_data.get("day_temp", 0),
+                        night_temp=weather_data.get("night_temp", 0),
+                        wind_direction=weather_data.get("wind_direction", ""),
+                        wind_power=weather_data.get("wind_power", "")
+                    )
+
+                    if not weather_info.date.strip():
+                        skipped_weather += 1
+                        logger.warning(f"跳过第 {idx+1} 条天气：date 为空，item={weather_data}")
+                        continue
+
+                    trip_plan.weather_info.append(weather_info)
+
+                except Exception as e:
+                    skipped_weather += 1
+                    logger.warning(
+                        f"跳过第 {idx+1} 条天气解析失败: {str(e)}; item={weather_data}"
+                    )
+
+            logger.info(f"行程天气解析完成：成功 {len(trip_plan.weather_info)} 条，跳过 {skipped_weather} 条")
+
+        # 2) 解析每日行程（逐天容错）
+        days_list = data.get("days", [])
+        if isinstance(days_list, list):
+            skipped_days = 0
+
+            for day_idx, day_data in enumerate(days_list):
+                if not isinstance(day_data, dict):
+                    skipped_days += 1
+                    logger.warning(f"跳过第 {day_idx+1} 天：数据不是对象")
+                    continue
+
+                try:
+                    # 2.1 解析景点（逐条容错）
+                    attractions = []
+                    skipped_attractions = 0
+                    attraction_list = day_data.get("attractions", [])
+
+                    if isinstance(attraction_list, list):
+                        for attr_idx, attr_data in enumerate(attraction_list):
+                            if not isinstance(attr_data, dict):
+                                skipped_attractions += 1
+                                logger.warning(
+                                    f"第 {day_idx+1} 天跳过第 {attr_idx+1} 个景点：数据不是对象"
+                                )
+                                continue
+
+                            try:
+                                raw_ticket_price = attr_data.get("ticket_price", 0)
+                                price_text = attr_data.get("price_text", "")
+
+                                if isinstance(raw_ticket_price, str) and not price_text:
+                                    price_text = raw_ticket_price
+
+                                attraction = Attraction(
+                                    name=attr_data.get("name", ""),
+                                    address=attr_data.get("address", ""),
+                                    location=self._parse_location(attr_data.get("location")),
+                                    visit_duration=attr_data.get("visit_duration", 0),
+                                    description=attr_data.get("description", ""),
+                                    category=attr_data.get("category", "景点"),
+                                    rating=attr_data.get("rating"),
+                                    photos=attr_data.get("photos", []) or [],
+                                    poi_id=attr_data.get("poi_id"),
+                                    image_url=attr_data.get("image_url"),
+                                    ticket_price=raw_ticket_price,
+                                    price_text=price_text,
+                                )
+
+                                if not attraction.name.strip():
+                                    skipped_attractions += 1
+                                    logger.warning(
+                                        f"第 {day_idx+1} 天跳过第 {attr_idx+1} 个景点：name 为空，item={attr_data}"
+                                    )
+                                    continue
+
+                                attractions.append(attraction)
+
+                            except Exception as e:
+                                skipped_attractions += 1
+                                logger.warning(
+                                    f"第 {day_idx+1} 天跳过第 {attr_idx+1} 个景点解析失败: {str(e)}; item={attr_data}"
+                                )
+
+                    # 2.2 解析餐饮（逐条容错）
+                    meals = []
+                    skipped_meals = 0
+                    meal_list = day_data.get("meals", [])
+
+                    if isinstance(meal_list, list):
+                        for meal_idx, meal_data in enumerate(meal_list):
+                            if not isinstance(meal_data, dict):
+                                skipped_meals += 1
+                                logger.warning(
+                                    f"第 {day_idx+1} 天跳过第 {meal_idx+1} 个餐饮：数据不是对象"
+                                )
+                                continue
+
+                            try:
+                                meal = Meal(**meal_data)
+
+                                # 如果你的 Meal.name 是必填，这里可以防空
+                                if hasattr(meal, "name") and not getattr(meal, "name", "").strip():
+                                    skipped_meals += 1
+                                    logger.warning(
+                                        f"第 {day_idx+1} 天跳过第 {meal_idx+1} 个餐饮：name 为空，item={meal_data}"
+                                    )
+                                    continue
+
+                                meals.append(meal)
+
+                            except Exception as e:
+                                skipped_meals += 1
+                                logger.warning(
+                                    f"第 {day_idx+1} 天跳过第 {meal_idx+1} 个餐饮解析失败: {str(e)}; item={meal_data}"
+                                )
+
+                    # 2.3 解析酒店（单独容错）
+                    hotel = None
+                    hotel_data = day_data.get("hotel")
+                    if isinstance(hotel_data, dict):
+                        try:
+                            hotel = Hotel(
+                                name=hotel_data.get("name", ""),
+                                address=hotel_data.get("address", ""),
+                                location=self._parse_location(hotel_data.get("location")),
+                                price_range=hotel_data.get("price_range", ""),
+                                rating=hotel_data.get("rating"),
+                                distance=hotel_data.get("distance", ""),
+                                type=hotel_data.get("type", ""),
+                                estimated_cost=hotel_data.get("estimated_cost", 0)
+                            )
+
+                            if not hotel.name.strip():
+                                logger.warning(f"第 {day_idx+1} 天酒店 name 为空，已忽略: {hotel_data}")
+                                hotel = None
+
+                        except Exception as e:
+                            logger.warning(f"第 {day_idx+1} 天酒店解析失败: {str(e)}; item={hotel_data}")
+                            hotel = None
+
+                    # 2.4 组装 DayPlan（单天失败不影响整份计划）
+                    day_plan = DayPlan(
+                        date=day_data.get("date", ""),
+                        day_index=day_data.get("day_index", day_idx),
+                        description=day_data.get("description", ""),
+                        transportation=day_data.get("transportation", request.transportation),
+                        accommodation=day_data.get("accommodation", request.accommodation),
+                        hotel=hotel,
+                        attractions=attractions,
+                        meals=meals
+                    )
+
+                    trip_plan.days.append(day_plan)
+                    logger.info(
+                        f"第 {day_idx+1} 天解析完成：景点 {len(attractions)} 个，餐饮 {len(meals)} 个"
+                    )
+
+                except Exception as e:
+                    skipped_days += 1
+                    logger.warning(f"跳过第 {day_idx+1} 天行程解析失败: {str(e)}; item={day_data}")
+                    continue
+
+            logger.info(f"行程天数解析完成：成功 {len(trip_plan.days)} 天，跳过 {skipped_days} 天")
+
+        # 3) 解析预算（单独容错）
+        budget_data = data.get("budget")
+        if isinstance(budget_data, dict):
+            try:
+                trip_plan.budget = Budget(**budget_data)
+            except Exception as e:
+                logger.warning(f"预算解析失败，已忽略: {str(e)}; item={budget_data}")
+
+        # 4) 最低保底：如果一天都没解析出来，再 fallback
+        if len(trip_plan.days) == 0:
+            logger.error("未解析到任何有效行程天数，将返回备用计划")
+            return self._create_fallback_plan(request)
+
+        return trip_plan
 
     def _create_fallback_plan(self, request: TripRequest) -> TripPlan:
         """创建备用计划(当Agent失败时)"""
