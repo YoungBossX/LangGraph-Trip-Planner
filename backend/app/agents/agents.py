@@ -6,7 +6,12 @@ from langchain.agents import create_agent
 from langchain_core.tools import BaseTool
 from langchain.agents.structured_output import ToolStrategy
 from ..services.llm_service import get_llm
-from ..models.schemas import ItineraryPlanResult
+from ..models.schemas import (
+    ItineraryPlanResult,
+    AttractionSearchResult,
+    WeatherSearchResult,
+    HotelSearchResult,
+)
 
 # 设置日志记录
 logger = logging.getLogger(__name__)
@@ -207,6 +212,7 @@ def create_attraction_search_agent(tools: List[BaseTool]):
             model=llm,
             tools=tools,
             system_prompt=system_prompt,
+            response_format=ToolStrategy(AttractionSearchResult),
             debug=False,
         )
 
@@ -236,6 +242,7 @@ def create_weather_agent(tools: List[BaseTool]):
             model=llm,
             tools=tools,
             system_prompt=system_prompt,
+            response_format=ToolStrategy(WeatherSearchResult),
             debug=False,
         )
 
@@ -264,6 +271,7 @@ def create_hotel_agent(tools: List[BaseTool]):
             model=llm,
             tools=tools,
             system_prompt=system_prompt,
+            response_format=ToolStrategy(HotelSearchResult),
             debug=False,
         )
 

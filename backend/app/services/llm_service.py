@@ -29,7 +29,7 @@ def get_llm() -> BaseChatModel:
             api_key=api_key,
             base_url=base_url,
             model=model,
-            temperature=0.7,
+            temperature=0.1,
             max_tokens=4096,
             timeout=100.0,
             max_retries=3

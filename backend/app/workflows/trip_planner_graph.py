@@ -69,59 +69,66 @@ class TripPlannerWorkflow:
         messages.append({"role": "user", "content": user_input})
         return {"messages": messages}
 
-    def _extract_agent_output(self, result: dict) -> str:
-        """从智能体结果中提取输出文本
+    def _to_json_str(self, obj: Any) -> str:
+        if obj is None:
+            return ""
+        if hasattr(obj, "model_dump"):
+            obj = obj.model_dump()
+        return json.dumps(obj, ensure_ascii=False)
 
-        新的 create_agent API 返回的结果包含 'messages' 列表，
-        需要提取最后一个 assistant 消息的内容。
-        """
+    def _extract_structured_payload(self, result: dict) -> Any:
+        # 1) LangChain 官方 structured output
+        payload = result.get("structured_response")
+        if payload is not None:
+            return payload
+
+        # 2) MCP ToolMessage artifact
+        for msg in reversed(result.get("messages", [])):
+            # LangChain message object
+            artifact = getattr(msg, "artifact", None)
+            if isinstance(artifact, dict):
+                payload = artifact.get("structured_content") or artifact.get("structuredContent")
+                if payload is not None:
+                    return payload
+
+            # dict message fallback
+            if isinstance(msg, dict):
+                artifact = msg.get("artifact")
+                if isinstance(artifact, dict):
+                    payload = artifact.get("structured_content") or artifact.get("structuredContent")
+                    if payload is not None:
+                        return payload
+
+        return None
+
+    def _extract_agent_output(self, result: dict) -> str:
+        structured = self._extract_structured_payload(result)
+        if structured is not None:
+            return self._to_json_str(structured)
+
         if "messages" in result:
             messages = result["messages"]
-            # 查找最后一个 assistant 消息
             for msg in reversed(messages):
-                # 处理字典格式的消息
                 if isinstance(msg, dict):
                     if msg.get("role") == "assistant":
                         content = msg.get("content", "")
-                        # 如果 content 是字典，转换为字符串
                         if isinstance(content, dict):
-                            content = json.dumps(content, ensure_ascii=False)
-                        if content:
-                            return str(content)
+                            return json.dumps(content, ensure_ascii=False)
+                        return str(content)
                 else:
-                    # 处理 LangChain 消息对象 (AIMessage, HumanMessage 等)
-                    # 尝试获取消息类型
-                    msg_type = None
-                    if hasattr(msg, 'type'):
-                        msg_type = msg.type
-                    elif hasattr(msg, 'role'):
-                        msg_type = msg.role
-
-                    # 检查是否是 assistant/ai 消息
+                    msg_type = getattr(msg, "type", getattr(msg, "role", None))
                     if msg_type in ["assistant", "ai"]:
-                        content = ""
-                        if hasattr(msg, 'content'):
-                            content = msg.content
-                        elif hasattr(msg, 'get'):
-                            content = msg.get("content", "")
-                        # 如果 content 是字典，转换为字符串
+                        content = getattr(msg, "content", "")
                         if isinstance(content, dict):
-                            import json
-                            content = json.dumps(content, ensure_ascii=False)
+                            return json.dumps(content, ensure_ascii=False)
                         if content:
                             return str(content)
-            # 如果没有找到 assistant 消息，返回空字符串
-            return ""
-        elif "output" in result:
-            # 兼容旧格式
-            return result["output"]
-        else:
-            # 尝试查找其他可能的字段
-            for key in ["text", "response", "content"]:
-                if key in result:
-                    return str(result[key])
-            # 如果都没有，返回整个结果的字符串表示
-            return str(result)
+
+        for key in ["output", "text", "response", "content"]:
+            if key in result:
+                return str(result[key])
+
+        return str(result)
 
     def _extract_structured_response(self, result: dict):
         """提取 structured_response"""
