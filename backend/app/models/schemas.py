@@ -3,6 +3,40 @@ import re
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
+def _extract_number(value, default=0):
+    """从字符串中提取整数，提取失败时返回默认值"""
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        nums = re.findall(r"\d+", value)
+        if nums:
+            return int(nums[0])
+    return default
+
+
+def _extract_float(value):
+    """从字符串中提取浮点数，提取失败时返回 None"""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        match = re.search(r"\d+(?:\.\d+)?", value)
+        if match:
+            try:
+                return float(match.group(0))
+            except ValueError:
+                return None
+    return None
+
 # ============ 请求模型 ============
 class TripRequest(BaseModel):
     """旅行规划请求"""
@@ -63,6 +97,22 @@ class Attraction(BaseModel):
     ticket_price: int = Field(default=0, description="门票价格(元)")
     price_text: str = Field(default="", description="价格描述，如人均消费/票价区间")
 
+    @field_validator("visit_duration", mode="before")
+    @classmethod
+    def parse_visit_duration(cls, v):
+        if v is None or v == "":
+            return 0
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float):
+            return int(v)
+        if isinstance(v, str):
+            hours_match = re.search(r"(\d+(?:\.\d+)?)\s*小时", v)
+            if hours_match:
+                return int(float(hours_match.group(1)) * 60)
+            return _extract_number(v, default=0)
+        return 0
+
     @field_validator("ticket_price", mode="before")
     @classmethod
     def parse_ticket_price(cls, v):
@@ -73,10 +123,7 @@ class Attraction(BaseModel):
         if isinstance(v, float):
             return int(v)
         if isinstance(v, str):
-            nums = re.findall(r"\d+", v)
-            if nums:
-                return int(nums[0])
-            return 0
+            return _extract_number(v, default=0)
         return 0
 
 class Meal(BaseModel):
@@ -88,6 +135,11 @@ class Meal(BaseModel):
     description: Optional[str] = Field(default=None, description="描述")
     estimated_cost: int = Field(default=0, description="预估费用(元)")
 
+    @field_validator("estimated_cost", mode="before")
+    @classmethod
+    def parse_estimated_cost(cls, v):
+        return _extract_number(v, default=0)
+
 class Hotel(BaseModel):
     """酒店信息"""
     name: str = Field(..., description="酒店名称")
@@ -98,6 +150,16 @@ class Hotel(BaseModel):
     distance: str = Field(default="", description="距离景点距离")
     type: str = Field(default="", description="酒店类型")
     estimated_cost: int = Field(default=0, description="预估费用(元/晚)")
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def parse_rating(cls, v):
+        return _extract_float(v)
+
+    @field_validator("estimated_cost", mode="before")
+    @classmethod
+    def parse_estimated_cost(cls, v):
+        return _extract_number(v, default=0)
 
 class DayPlan(BaseModel):
     """单日行程"""
@@ -126,11 +188,8 @@ class WeatherInfo(BaseModel):
         """解析温度，移除°C等单位"""
         if isinstance(v, str):
             v = v.replace("°C", "").replace("℃", "").replace("°", "").strip()
-            try:
-                return int(v)
-            except ValueError:
-                return 0
-        return int(v) if v is not None else 0
+            return _extract_number(v, default=0)
+        return _extract_number(v, default=0)
 
 class Budget(BaseModel):
     """预算信息"""
@@ -139,6 +198,11 @@ class Budget(BaseModel):
     total_meals: int = Field(default=0, description="餐饮总费用")
     total_transportation: int = Field(default=0, description="交通总费用")
     total: int = Field(default=0, description="总费用")
+
+    @field_validator("total_attractions", "total_hotels", "total_meals", "total_transportation", "total", mode="before")
+    @classmethod
+    def parse_budget_number(cls, v):
+        return _extract_number(v, default=0)
 
 class TripPlan(BaseModel):
     """旅行计划"""

@@ -2,6 +2,7 @@
 
 from typing import Dict, Any, List, Optional
 import json
+import re
 import logging
 from datetime import datetime, timedelta
 from langgraph.graph import StateGraph, END
@@ -58,84 +59,6 @@ class TripPlannerWorkflow:
             logger.error(f"❌ 工作流初始化失败: {str(e)}", exc_info=True)
             raise
 
-    def _prepare_agent_input(self, user_input: str, chat_history: list) -> dict:
-        """准备智能体输入格式，将 input 和 chat_history 转换为 messages 格式"""
-        messages = []
-        # 添加历史消息（如果存在）
-        for msg in chat_history:
-            # 假设历史消息格式为 {"role": "...", "content": "..."}
-            messages.append(msg)
-        # 添加当前用户输入
-        messages.append({"role": "user", "content": user_input})
-        return {"messages": messages}
-
-    def _to_json_str(self, obj: Any) -> str:
-        if obj is None:
-            return ""
-        if hasattr(obj, "model_dump"):
-            obj = obj.model_dump()
-        return json.dumps(obj, ensure_ascii=False)
-
-    def _extract_structured_payload(self, result: dict) -> Any:
-        # 1) LangChain 官方 structured output
-        payload = result.get("structured_response")
-        if payload is not None:
-            return payload
-
-        # 2) MCP ToolMessage artifact
-        for msg in reversed(result.get("messages", [])):
-            # LangChain message object
-            artifact = getattr(msg, "artifact", None)
-            if isinstance(artifact, dict):
-                payload = artifact.get("structured_content") or artifact.get("structuredContent")
-                if payload is not None:
-                    return payload
-
-            # dict message fallback
-            if isinstance(msg, dict):
-                artifact = msg.get("artifact")
-                if isinstance(artifact, dict):
-                    payload = artifact.get("structured_content") or artifact.get("structuredContent")
-                    if payload is not None:
-                        return payload
-
-        return None
-
-    def _extract_agent_output(self, result: dict) -> str:
-        structured = self._extract_structured_payload(result)
-        if structured is not None:
-            return self._to_json_str(structured)
-
-        if "messages" in result:
-            messages = result["messages"]
-            for msg in reversed(messages):
-                if isinstance(msg, dict):
-                    if msg.get("role") == "assistant":
-                        content = msg.get("content", "")
-                        if isinstance(content, dict):
-                            return json.dumps(content, ensure_ascii=False)
-                        return str(content)
-                else:
-                    msg_type = getattr(msg, "type", getattr(msg, "role", None))
-                    if msg_type in ["assistant", "ai"]:
-                        content = getattr(msg, "content", "")
-                        if isinstance(content, dict):
-                            return json.dumps(content, ensure_ascii=False)
-                        if content:
-                            return str(content)
-
-        for key in ["output", "text", "response", "content"]:
-            if key in result:
-                return str(result[key])
-
-        return str(result)
-
-    def _extract_structured_response(self, result: dict):
-        """提取 structured_response"""
-        if isinstance(result, dict) and "structured_response" in result:
-            return result["structured_response"]
-        return None
-
     def _build_graph(self) -> StateGraph:
         """构建 StateGraph"""
         workflow = StateGraph(TripPlannerState)
@@ -147,50 +70,28 @@ class TripPlannerWorkflow:
         workflow.add_node("handle_error", self._handle_error)
         # 设置入口点
         workflow.set_entry_point("search_attractions")
-        # 添加边（正常流程）
-        # workflow.add_edge("search_attractions", "check_weather")
-        # workflow.add_edge("check_weather", "find_hotels")
-        # workflow.add_edge("find_hotels", "plan_itinerary")
-        # workflow.add_edge("plan_itinerary", END)
-        # 添加错误处理边
+        # 添加条件边
         workflow.add_conditional_edges(
             "search_attractions",
             self._check_error,
-            {
-                "continue": "check_weather",
-                "error": "handle_error"
-            }
+            {"continue": "check_weather", "error": "handle_error"}
         )
-
         workflow.add_conditional_edges(
             "check_weather",
             self._check_error,
-            {
-                "continue": "find_hotels",
-                "error": "handle_error"
-            }
+            {"continue": "find_hotels", "error": "handle_error"}
         )
-
         workflow.add_conditional_edges(
             "find_hotels",
             self._check_error,
-            {
-                "continue": "plan_itinerary",
-                "error": "handle_error"
-            }
+            {"continue": "plan_itinerary", "error": "handle_error"}
         )
-
         workflow.add_conditional_edges(
             "plan_itinerary",
             self._check_error,
-            {
-                "continue": END,
-                "error": "handle_error"
-            }
+            {"continue": END, "error": "handle_error"}
         )
-        
         workflow.add_edge("handle_error", END)
-        
         return workflow.compile()
 
     def _search_attractions(self, state: TripPlannerState) -> Dict[str, Any]:
@@ -204,19 +105,13 @@ class TripPlannerWorkflow:
                 config={"recursion_limit": 25}
             )
 
-            structured = self._extract_structured_response(result)
+            output = self._extract_agent_output(result)
+            logger.info(f"Agent 输出前300字符: {output[:300]}")
 
-            if structured is not None:
-                attractions = structured.attractions
-                logger.info(f"structured_response 返回 {len(attractions)} 个景点")
-            else:
-                output = self._extract_agent_output(result)
-                logger.info(f"回退到文本解析，Agent 输出前300字符: {output[:300]}")
-                attractions = self._parse_attractions(output)
-
+            attractions = self._parse_attractions(output)
             logger.info(f"最终保留 {len(attractions)} 个有效景点")
 
-            if len(attractions) == 0:
+            if not attractions:
                 logger.warning("未解析到任何有效景点，后续将使用备用数据或降级结果")
 
             return {
@@ -228,7 +123,7 @@ class TripPlannerWorkflow:
             return {
                 "error": f"景点搜索失败: {str(e)}",
                 "current_step": "error"
-        }
+            }
 
     def _check_weather(self, state: TripPlannerState) -> Dict[str, Any]:
         logger.info("🌤️  查询天气...")
@@ -241,19 +136,13 @@ class TripPlannerWorkflow:
                 config={"recursion_limit": 25}
             )
 
-            structured = self._extract_structured_response(result)
+            output = self._extract_agent_output(result)
+            logger.info(f"Agent 输出前300字符: {output[:300]}")
 
-            if structured is not None:
-                weather_info = structured.weather_info
-                logger.info(f"structured_response 返回 {len(weather_info)} 条天气")
-            else:
-                output = self._extract_agent_output(result)
-                logger.info(f"回退到文本解析，Agent 输出前300字符: {output[:300]}")
-                weather_info = self._parse_weather(output)
-
+            weather_info = self._parse_weather(output)
             logger.info(f"最终保留 {len(weather_info)} 条有效天气信息")
 
-            if len(weather_info) == 0:
+            if not weather_info:
                 logger.warning("未解析到任何有效天气信息")
 
             return {
@@ -278,19 +167,13 @@ class TripPlannerWorkflow:
                 config={"recursion_limit": 25}
             )
 
-            structured = self._extract_structured_response(result)
+            output = self._extract_agent_output(result)
+            logger.info(f"Agent 输出前300字符: {output[:300]}")
 
-            if structured is not None:
-                hotels = structured.hotels
-                logger.info(f"structured_response 返回 {len(hotels)} 个酒店")
-            else:
-                output = self._extract_agent_output(result)
-                logger.info(f"回退到文本解析，Agent 输出前300字符: {output[:300]}")
-                hotels = self._parse_hotels(output)
-
+            hotels = self._parse_hotels(output)
             logger.info(f"最终保留 {len(hotels)} 个有效酒店")
 
-            if len(hotels) == 0:
+            if not hotels:
                 logger.warning("未解析到任何有效酒店信息")
 
             return {
@@ -321,16 +204,10 @@ class TripPlannerWorkflow:
                 config={"recursion_limit": 25}
             )
 
-            structured = self._extract_structured_response(result)
+            output = self._extract_agent_output(result)
+            logger.info(f"Planner 输出前300字符: {output[:300]}")
 
-            if structured is not None:
-                trip_plan = structured.trip_plan
-                logger.info(f"structured_response 返回 {len(trip_plan.days)} 天行程")
-            else:
-                output = self._extract_agent_output(result)
-                logger.info(f"回退到文本解析，Planner 输出前300字符: {output[:300]}")
-                trip_plan = self._parse_trip_plan(output, state["request"])
-
+            trip_plan = self._parse_trip_plan(output, state["request"])
             logger.info(f"解析到 {len(trip_plan.days)} 天行程")
 
             return {
@@ -355,13 +232,7 @@ class TripPlannerWorkflow:
             "current_step": "error_handled",
             "messages": [{"role": "assistant", "content": f"遇到错误，已生成备用计划: {error_msg}"}]
         }
-
-    def _check_error(self, state: TripPlannerState) -> str:
-        """检查是否有错误"""
-        return "error" if state.get("error") else "continue"
-
-    # ============ 辅助方法（从原 trip_planner_agent.py 迁移）============
-
+    
     def _build_attraction_query(self, request: TripRequest) -> str:
         if request.preferences:
             keywords = "、".join(request.preferences)
@@ -371,45 +242,30 @@ class TripPlannerWorkflow:
 
     def _build_planner_query(self, request: TripRequest, attractions: List[Attraction],
                         weather: List[WeatherInfo], hotels: List[Hotel]) -> str:
-        """构建行程规划查询"""
-        # 把景点信息序列化为完整 JSON
         attractions_data = []
         for a in attractions:
             attractions_data.append({
-            "name": a.name,
-            "address": a.address,
-            "location": {"longitude": a.location.longitude, "latitude": a.location.latitude} if a.location else None,
-            "visit_duration": a.visit_duration,
-            "description": a.description,
-            "category": a.category,
-            "ticket_price": a.ticket_price if hasattr(a, "ticket_price") else 0,
-            "price_text": a.price_text if hasattr(a, "price_text") else ""
-        })
+                "name": a.name, "address": a.address,
+                "location": {"longitude": a.location.longitude, "latitude": a.location.latitude} if a.location else None,
+                "visit_duration": a.visit_duration, "description": a.description,
+                "category": a.category, "ticket_price": a.ticket_price
+            })
 
-        # 把天气信息序列化
         weather_data = []
         for w in weather:
             weather_data.append({
-                "date": w.date,
-                "day_weather": w.day_weather,
-                "night_weather": w.night_weather,
-                "day_temp": w.day_temp,
-                "night_temp": w.night_temp,
-                "wind_direction": w.wind_direction,
-                "wind_power": w.wind_power
+                "date": w.date, "day_weather": w.day_weather, "night_weather": w.night_weather,
+                "day_temp": w.day_temp, "night_temp": w.night_temp,
+                "wind_direction": w.wind_direction, "wind_power": w.wind_power
             })
 
-        # 把酒店信息序列化
         hotels_data = []
         for h in hotels:
             hotels_data.append({
-                "name": h.name,
-                "address": h.address,
+                "name": h.name, "address": h.address,
                 "location": {"longitude": h.location.longitude, "latitude": h.location.latitude} if h.location else None,
-                "price_range": h.price_range if hasattr(h, 'price_range') else "",
-                "rating": h.rating if hasattr(h, 'rating') else "",
-                "type": h.type if hasattr(h, 'type') else "",
-                "estimated_cost": h.estimated_cost if hasattr(h, 'estimated_cost') else 0
+                "price_range": h.price_range, "rating": h.rating,
+                "type": h.type, "estimated_cost": h.estimated_cost
             })
 
         query = f"""请根据以下信息生成{request.city}的{request.travel_days}天旅行计划:
@@ -441,35 +297,302 @@ class TripPlannerWorkflow:
 """
         if request.free_text_input:
             query += f"\n**额外要求:** {request.free_text_input}"
-
         return query
 
-    def _extract_json(self, response: str) -> str:
-        """从响应文本中提取JSON字符串"""
-        # 查找JSON代码块
-        if "```json" in response:
-            json_start = response.find("```json") + 7
-            json_end = response.find("```", json_start)
-            json_str = response[json_start:json_end].strip()
-        elif "```" in response:
-            json_start = response.find("```") + 3
-            json_end = response.find("```", json_start)
-            json_str = response[json_start:json_end].strip()
-        elif "[" in response and "]" in response:
-            # 处理JSON数组
-            json_start = response.find("[")
-            json_end = response.rfind("]") + 1
-            json_str = response[json_start:json_end]
-        elif "{" in response and "}" in response:
-            # 直接查找JSON对象
-            json_start = response.find("{")
-            json_end = response.rfind("}") + 1
-            json_str = response[json_start:json_end]
-        else:
-            # 如果没有找到JSON，返回原始响应
-            json_str = response.strip()
-        return json_str
-    
+    def _check_error(self, state: TripPlannerState) -> str:
+        return "error" if state.get("error") else "continue"
+
+    def _prepare_agent_input(self, user_input: str, chat_history: list) -> dict:
+        """准备智能体输入格式，将 input 和 chat_history 转换为 messages 格式"""
+        messages = []
+        for msg in chat_history:
+            messages.append(msg)
+        messages.append({"role": "user", "content": user_input})
+        return {"messages": messages}
+
+    def _to_json_str(self, obj: Any) -> str:
+        if obj is None:
+            return ""
+        if hasattr(obj, "model_dump"):
+            obj = obj.model_dump()
+        return json.dumps(obj, ensure_ascii=False)
+
+    def _normalize_message_content(self, content: Any) -> str:
+        """把 LangChain 返回的各种 content 结构统一转成纯文本"""
+        if content is None:
+            return ""
+
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, dict):
+            if "text" in content and isinstance(content["text"], str):
+                return content["text"]
+            return json.dumps(content, ensure_ascii=False)
+
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                    continue
+
+                if isinstance(item, dict):
+                    if isinstance(item.get("text"), str):
+                        parts.append(item["text"])
+                        continue
+                    if isinstance(item.get("content"), str):
+                        parts.append(item["content"])
+                        continue
+                    if item.get("type") == "text" and isinstance(item.get("text"), str):
+                        parts.append(item["text"])
+                        continue
+
+                parts.append(str(item))
+
+            return "\n".join(part for part in parts if part)
+
+        return str(content)
+
+    def _extract_agent_output(self, result: dict) -> str:
+        """优先提取 assistant 文本内容，兼容 LangChain message object / dict 两种结构"""
+        if "messages" in result:
+            messages = result["messages"]
+            for msg in reversed(messages):
+                if isinstance(msg, dict):
+                    role = msg.get("role") or msg.get("type")
+                    if role in ["assistant", "ai"]:
+                        return self._normalize_message_content(msg.get("content", ""))
+
+                else:
+                    msg_type = getattr(msg, "type", getattr(msg, "role", None))
+                    if msg_type in ["assistant", "ai"]:
+                        return self._normalize_message_content(getattr(msg, "content", ""))
+
+        for key in ["output", "text", "response", "content"]:
+            if key in result:
+                return self._normalize_message_content(result[key])
+
+        return self._normalize_message_content(result)
+
+    def _balanced_json_segments(self, text: str) -> List[str]:
+        """从文本中提取所有顶层平衡的 JSON 片段"""
+        segments: List[str] = []
+        stack: List[str] = []
+        start_idx: Optional[int] = None
+        in_string = False
+        escape = False
+
+        pairs = {"{": "}", "[": "]"}
+        closing = {"}": "{", "]": "["}
+
+        for idx, ch in enumerate(text):
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+
+            if ch == '"':
+                in_string = True
+                continue
+
+            if ch in pairs:
+                if not stack:
+                    start_idx = idx
+                stack.append(ch)
+                continue
+
+            if ch in closing and stack:
+                if stack[-1] == closing[ch]:
+                    stack.pop()
+                    if not stack and start_idx is not None:
+                        segments.append(text[start_idx:idx + 1].strip())
+                        start_idx = None
+                else:
+                    stack = []
+                    start_idx = None
+
+        return segments
+
+    def _safe_load_json(self, text: str) -> Optional[Any]:
+        if not text:
+            return None
+
+        cleaned = text.strip().replace("\ufeff", "").replace("\u200b", "")
+        try:
+            return json.loads(cleaned)
+        except Exception:
+            return None
+
+    def _extract_json(self, response: str, preferred_keys: Optional[List[str]] = None) -> str:
+        """尽量从任意文本中提取最可能的 JSON 字符串"""
+        if not response:
+            raise ValueError("响应为空")
+
+        text = response.strip().replace("\ufeff", "").replace("\u200b", "")
+
+        # 1) 优先处理 ```json ... ``` / ``` ... ```
+        fenced_patterns = [
+            r"```json\s*(.*?)\s*```",
+            r"```python\s*(.*?)\s*```",
+            r"```\s*(.*?)\s*```",
+        ]
+        for pattern in fenced_patterns:
+            matches = re.findall(pattern, text, flags=re.DOTALL | re.IGNORECASE)
+            for block in matches:
+                block = block.strip()
+                if self._safe_load_json(block) is not None:
+                    return block
+
+        # 2) 提取所有平衡的 JSON 片段
+        segments = self._balanced_json_segments(text)
+
+        # 3) 如果指定了 preferred_keys，优先返回包含这些 key 的片段
+        if preferred_keys:
+            for seg in segments:
+                parsed = self._safe_load_json(seg)
+                if isinstance(parsed, dict):
+                    for key in preferred_keys:
+                        if key in parsed:
+                            return seg
+
+        # 4) 返回第一个能成功 loads 的片段
+        for seg in segments:
+            if self._safe_load_json(seg) is not None:
+                return seg
+
+        # 5) 最后兜底：整段文本本身就是 JSON
+        if self._safe_load_json(text) is not None:
+            return text
+
+        raise ValueError("未找到可解析的 JSON 内容")
+
+    def _parse_attractions_from_markdown(self, response: str) -> List[Attraction]:
+        """兜底解析 Markdown/项目符号格式的景点回复"""
+        sections = re.split(r"\n(?=###\s*\d+\.)", response)
+        attractions: List[Attraction] = []
+
+        for section in sections:
+            title_match = re.search(r"###\s*\d+\.\s*(.+)", section)
+            if not title_match:
+                continue
+
+            name = title_match.group(1).strip()
+            address_match = re.search(r"地址\s*[:：]\s*(.+)", section)
+            type_match = re.search(r"类型\s*[:：]\s*(.+)", section)
+            desc_match = re.search(r"(?:特色|描述|简介)\s*[:：]\s*(.+)", section)
+            price_match = re.search(r"(?:门票|价格|票价|人均)\s*[:：]\s*([^\n]+)", section)
+
+            raw_price = price_match.group(1).strip() if price_match else ""
+
+            try:
+                attraction = Attraction(
+                    name=name,
+                    address=address_match.group(1).strip() if address_match else "",
+                    location=None,
+                    visit_duration=120,
+                    description=desc_match.group(1).strip() if desc_match else "",
+                    category=type_match.group(1).strip() if type_match else "景点",
+                    ticket_price=raw_price,
+                    price_text=raw_price if raw_price else "",
+                )
+                if attraction.name.strip():
+                    attractions.append(attraction)
+            except Exception:
+                continue
+
+        return attractions
+
+    def _parse_hotels_from_markdown(self, response: str) -> List[Hotel]:
+        """兜底解析 Markdown/项目符号格式的酒店回复"""
+        sections = re.split(r"\n(?=###\s*\d+\.)", response)
+        hotels: List[Hotel] = []
+
+        for section in sections:
+            title_match = re.search(r"###\s*\d+\.\s*\*\*(.+?)\*\*", section)
+            if not title_match:
+                title_match = re.search(r"###\s*\d+\.\s*(.+)", section)
+            if not title_match:
+                continue
+
+            name = title_match.group(1).strip()
+            address_match = re.search(r"地址\s*[:：]\s*(.+)", section)
+            type_match = re.search(r"类型\s*[:：]\s*(.+)", section)
+            rating_match = re.search(r"评分\s*[:：]\s*([^\n]+)", section)
+            price_match = re.search(r"(?:预估价格|价格)\s*[:：]\s*([^\n]+)", section)
+
+            try:
+                hotel = Hotel(
+                    name=name,
+                    address=address_match.group(1).strip() if address_match else "",
+                    location=None,
+                    price_range="",
+                    rating=rating_match.group(1).strip() if rating_match else None,
+                    distance="",
+                    type=type_match.group(1).strip() if type_match else "",
+                    estimated_cost=price_match.group(1).strip() if price_match else 0,
+                )
+                if hotel.name.strip():
+                    hotels.append(hotel)
+            except Exception:
+                continue
+
+        return hotels
+
+    def _parse_weather_from_markdown(self, response: str) -> List[WeatherInfo]:
+        """兜底解析 Markdown/项目符号格式的天气回复"""
+        weather_info: List[WeatherInfo] = []
+        pattern = re.compile(
+            r"\d+\.\s*\*\*(?P<head>[^*]+)\*\*(?P<body>.*?)(?=\n\d+\.\s*\*\*|\Z)",
+            re.DOTALL
+        )
+
+        for match in pattern.finditer(response):
+            head = match.group("head")
+            body = match.group("body")
+
+            date_match = re.search(r"(\d{4}-\d{2}-\d{2})", head)
+            if not date_match:
+                continue
+
+            day_line = re.search(r"白天\s*[:：]\s*([^\n]+)", body)
+            night_line = re.search(r"夜间\s*[:：]\s*([^\n]+)", body)
+
+            def _parse_line(line: str):
+                if not line:
+                    return "", 0, "", ""
+                weather_match = re.match(r"([^，,]+)", line.strip())
+                temp_match = re.search(r"温度\s*(\d+)", line)
+                wind_match = re.findall(r"[，,]\s*([^，,\n]+)", line)
+                weather = weather_match.group(1).strip() if weather_match else ""
+                temp = int(temp_match.group(1)) if temp_match else 0
+                wind_direction = wind_match[0].strip() if len(wind_match) >= 1 else ""
+                wind_power = wind_match[1].strip() if len(wind_match) >= 2 else ""
+                return weather, temp, wind_direction, wind_power
+
+            day_weather, day_temp, day_wind_direction, day_wind_power = _parse_line(day_line.group(1) if day_line else "")
+            night_weather, night_temp, night_wind_direction, night_wind_power = _parse_line(night_line.group(1) if night_line else "")
+
+            try:
+                weather = WeatherInfo(
+                    date=date_match.group(1),
+                    day_weather=day_weather,
+                    night_weather=night_weather,
+                    day_temp=day_temp,
+                    night_temp=night_temp,
+                    wind_direction=day_wind_direction or night_wind_direction,
+                    wind_power=day_wind_power or night_wind_power,
+                )
+                weather_info.append(weather)
+            except Exception:
+                continue
+
+        return weather_info
+
     def _parse_location(self, raw_location: Any) -> Optional[Location]:
         """安全解析经纬度，缺失或非法时返回 None"""
         if not raw_location or not isinstance(raw_location, dict):
@@ -494,7 +617,7 @@ class TripPlannerWorkflow:
         json_str = ""
 
         try:
-            json_str = self._extract_json(response)
+            json_str = self._extract_json(response, preferred_keys=["attractions"])
             data = json.loads(json_str)
         except Exception as e:
             logger.error(f"解析景点 JSON 失败: {str(e)}")
@@ -502,6 +625,10 @@ class TripPlannerWorkflow:
             logger.error(f"原始响应前500字符: {response[:500]}")
             if json_str:
                 logger.error(f"提取的JSON字符串前500字符: {json_str[:500]}")
+            markdown_data = self._parse_attractions_from_markdown(response)
+            if markdown_data:
+                logger.warning(f"景点 JSON 解析失败，已回退到 Markdown 解析，得到 {len(markdown_data)} 条结果")
+                return markdown_data
             return []
 
         # 兼容两种格式：
@@ -569,7 +696,7 @@ class TripPlannerWorkflow:
         json_str = ""
 
         try:
-            json_str = self._extract_json(response)
+            json_str = self._extract_json(response, preferred_keys=["weather_info"])
             data = json.loads(json_str)
         except Exception as e:
             logger.error(f"解析天气 JSON 失败: {str(e)}")
@@ -577,6 +704,10 @@ class TripPlannerWorkflow:
             logger.error(f"原始响应前500字符: {response[:500]}")
             if json_str:
                 logger.error(f"提取的JSON字符串前500字符: {json_str[:500]}")
+            markdown_data = self._parse_weather_from_markdown(response)
+            if markdown_data:
+                logger.warning(f"天气 JSON 解析失败，已回退到 Markdown 解析，得到 {len(markdown_data)} 条结果")
+                return markdown_data
             return []
 
         # 兼容两种格式：
@@ -632,7 +763,7 @@ class TripPlannerWorkflow:
         json_str = ""
 
         try:
-            json_str = self._extract_json(response)
+            json_str = self._extract_json(response, preferred_keys=["hotels"])
             data = json.loads(json_str)
         except Exception as e:
             logger.error(f"解析酒店 JSON 失败: {str(e)}")
@@ -640,6 +771,10 @@ class TripPlannerWorkflow:
             logger.error(f"原始响应前500字符: {response[:500]}")
             if json_str:
                 logger.error(f"提取的JSON字符串前500字符: {json_str[:500]}")
+            markdown_data = self._parse_hotels_from_markdown(response)
+            if markdown_data:
+                logger.warning(f"酒店 JSON 解析失败，已回退到 Markdown 解析，得到 {len(markdown_data)} 条结果")
+                return markdown_data
             return []
 
         # 兼容两种格式：
@@ -696,7 +831,7 @@ class TripPlannerWorkflow:
         json_str = ""
 
         try:
-            json_str = self._extract_json(response)
+            json_str = self._extract_json(response, preferred_keys=["days", "trip_plan"])
             data = json.loads(json_str)
         except Exception as e:
             logger.error(f"解析行程计划 JSON 失败: {str(e)}")
