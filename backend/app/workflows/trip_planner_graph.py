@@ -163,7 +163,7 @@ class TripPlannerWorkflow:
     def _find_hotels(self, state: TripPlannerState) -> Dict[str, Any]:
         logger.info("🏨 搜索酒店...")
         try:
-            query = f"搜索{state['request'].city}的{state['request'].accommodation}酒店"
+            query = f"搜索{state['request'].city}的{state['request'].accommodation}"
             logger.info(f"查询内容: {query}")
 
             result = self.hotel_agent.invoke(
