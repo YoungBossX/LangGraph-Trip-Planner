@@ -1,10 +1,10 @@
-# LangGraph Trip Planner
+# 基于 LangGraph 框架构建的多 Agent 智能旅行规划系统 🌍✈️
 
 一个基于 **LangGraph + FastAPI + Vue 3** 的多智能体旅行规划系统。项目将 **POI 搜索、天气查询、酒店推荐、行程生成** 串联为可控的工作流，并接入 **高德地图 MCP 工具链**，为前端结果页提供更适合地图展示的景点、酒店与行程数据。
 
-相比把全部工作都交给单次 LLM 调用，这个项目更偏向“**代码负责确定性检索与数据组织，Agent 负责筛选、理解与规划**”的混合架构：先用工具获取候选 POI / 天气 / 酒店，再由 Agent 进行结构化筛选与行程编排，最后输出适合前端展示的旅行计划。
+相比把全部工作都交给单次 LLM 调用，这个项目更偏向“**代码负责确定性检索与数据组织，Agent 负责筛选、理解与规划**”的混合架构：先用工具获取候选 POI、天气、酒店，再由 Agent 进行结构化筛选与行程编排，最后输出适合前端展示的旅行计划。
 
-## ✨ 项目亮点
+## ✨ 功能特点
 
 - **LangGraph 工作流编排**：后端以 `StateGraph` 构建旅行规划链路，核心节点包括 `search_attractions`、`check_weather`、`find_hotels`、`plan_itinerary`，并带有统一错误分流节点 `handle_error`
 - **多智能体协作**：景点、天气、酒店与行程规划分别由不同 Agent / 节点处理，职责清晰，便于调试与扩展
@@ -49,7 +49,7 @@ graph LR
 整体流程并不是“让 LLM 从零生成旅行计划”，而是：
 
 1. 根据用户输入构造景点搜索条件
-2. 使用 Agent / 工具获得候选景点数据
+2. 使用 Agent Tool 获得候选景点数据
 3. 查询目标城市天气
 4. 结合住宿偏好搜索酒店
 5. 将景点、天气、酒店整合后交给 Planner Agent 生成日程安排
@@ -147,21 +147,21 @@ pip install fastapi uvicorn langchain langchain-openai langgraph langchain-mcp-a
 
 ```dotenv
 # 高德地图
-AMAP_API_KEY=你的高德 Web 服务 Key
+AMAP_API_KEY=
 
 # LLM 配置
-LLM_API_KEY=你的模型 API Key
-LLM_BASE_URL=https://api.siliconflow.cn/v1
-LLM_MODEL_ID=deepseek-ai/DeepSeek-V3.2
+LLM_API_KEY=
+LLM_BASE_URL=
+LLM_MODEL_ID=
 
 # 可选：图片服务
 UNSPLASH_ACCESS_KEY=
 UNSPLASH_SECRET_KEY=
 
 # Agent 参数（可选）
-AGENT_MAX_ITERATIONS=5
-AGENT_TEMPERATURE=0.7
-AGENT_TIMEOUT=300.0
+AGENT_MAX_ITERATIONS=
+AGENT_TEMPERATURE=
+AGENT_TIMEOUT=
 ```
 
 启动后端：
@@ -201,7 +201,7 @@ npm run dev
 
 ### 景点搜索：工具检索 + Agent 筛选
 
-景点阶段不是简单让模型“编景点”，而是先构造查询，再交给 Agent / 工具完成更可靠的候选获取与整理。
+景点阶段不是简单让模型“编景点”，而是先构造查询，再交给 Agent 完成更可靠的候选获取与整理。
 
 示意逻辑：
 
@@ -228,7 +228,7 @@ structured = self._extract_structured_response(result)
 根据当前项目结构，后端路由主要分为三类：
 
 - `trip.py`：旅行规划主接口
-- `poi.py`：地点 / POI 搜索相关接口
+- `poi.py`：地点 POI 搜索相关接口
 - `map.py`：地图、天气、路线等相关接口
 
 当前 README 中示例接口包括：
@@ -272,5 +272,3 @@ http://localhost:8000/docs
 - LangGraph
 - LangChain
 - 高德地图开放平台
-- amap-mcp-server
-- Datawhale hello-agents
