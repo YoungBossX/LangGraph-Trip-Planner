@@ -39,7 +39,8 @@ class Settings(BaseSettings):
     # 智能体配置
     agent_max_iterations: int = 3
     agent_temperature: float = 0.7
-    agent_timeout: float = 300.0
+    agent_timeout: float = 100.0
+    agent_max_tokens: int = 4096
 
     # 日志配置
     log_level: str = "INFO"

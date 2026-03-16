@@ -4,6 +4,7 @@ import os
 import dotenv
 from pathlib import Path
 from typing import Optional
+from ..config import settings
 
 dotenv.load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
@@ -29,10 +30,10 @@ def get_llm() -> BaseChatModel:
             api_key=api_key,
             base_url=base_url,
             model=model,
-            temperature=0.1,
-            max_tokens=4096,
-            timeout=100.0,
-            max_retries=3
+            temperature=settings.agent_temperature,
+            max_tokens=settings.agent_max_tokens,
+            timeout=settings.agent_timeout,
+            max_retries=settings.agent_max_iterations
         )
 
         print(f"[SUCCESS] LangChain LLM 初始化成功")

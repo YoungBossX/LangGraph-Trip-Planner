@@ -125,7 +125,7 @@ class TripPlannerWorkflow:
 
             all_pois = []
             seen_ids = set()
-            for kw in keywords_list[:5]:
+            for kw in keywords_list[:7]:
                 try:
                     logger.info(f"搜索关键词: {kw}")
                     result = search_tool.invoke({"keywords": kw, "city": request.city, "citylimit": "true"})

@@ -253,7 +253,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据提供的景点、天
       "hotel": {
         "name": "酒店名称",
         "address": "酒店地址",
-        "location": {"longitude": "使用输入数据中的值", "latitude": "使用输入数据中的值"}
+        "location": {"longitude": "使用输入数据中的值", "latitude": "使用输入数据中的值"},
         "price_range": "",
         "rating": 4.5,
         "distance": "",
@@ -264,7 +264,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据提供的景点、天
         {
           "name": "景点名称",
           "address": "详细地址",
-          "location": {"longitude": "使用输入数据中的值", "latitude": "使用输入数据中的值"}
+          "location": {"longitude": "使用输入数据中的值", "latitude": "使用输入数据中的值"},
           "visit_duration": 120,
           "description": "景点描述",
           "category": "景点",
