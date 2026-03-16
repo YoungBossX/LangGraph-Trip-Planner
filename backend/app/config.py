@@ -37,10 +37,10 @@ class Settings(BaseSettings):
     langchain_project: str = ""
 
     # 智能体配置
-    agent_max_iterations: int = 3
-    agent_temperature: float = 0.7
-    agent_timeout: float = 100.0
-    agent_max_tokens: int = 4096
+    agent_max_iterations: int = 2
+    agent_temperature: float = 0.1
+    agent_timeout: float = 120.0
+    agent_max_tokens: int = 8192
 
     # 日志配置
     log_level: str = "INFO"
