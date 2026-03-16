@@ -15,15 +15,22 @@
 
 ### 工作流节点
 
-```
-search_attractions → check_weather → find_hotels → plan_itinerary → END
-        ↓ error           ↓ error         ↓ error        ↓ error
-                        handle_error → END
+```mermaid
+graph LR
+    A[search_attractions] --> B[check_weather]
+    B --> C[find_hotels]
+    C --> D[plan_itinerary]
+    D --> E[END]
+    A -->|error| F[handle_error]
+    B -->|error| F
+    C -->|error| F
+    D -->|error| F
+    F --> E
 ```
 
 | 节点 | 工作方式 | 说明 |
 |------|---------|------|
-| search_attractions | 代码多关键词搜索 → Agent 筛选/描述 → 代码 geo 补坐标 | 多偏好分别搜索，去重取 Top 8 |
+| search_attractions | 代码多关键词搜索 → Agent 筛选、描述 → 代码 geo 补坐标 | 多偏好分别搜索，去重取 Top 8 |
 | check_weather | Agent 调工具 → 解析，失败则代码兜底 | 高德天气 API 返回未来 4 天预报 |
 | find_hotels | 代码搜索 → Agent 筛选/描述 → 代码 geo 补坐标 | 按住宿偏好搜索，取 Top 5 |
 | plan_itinerary | Agent 综合所有数据生成完整 JSON 行程 | 唯一需要大量 LLM 推理的节点 |
@@ -212,7 +219,7 @@ for attr in attractions:
 
 - 高德天气 API 只返回未来 4 天预报，无法查询历史天气
 - `maps_text_search` 返回的 POI 不含经纬度，需要额外调用 `maps_geo` 补充
-- LLM 响应速度取决于 API 提供商，硅基流动高峰期可能超时
+- LLM 响应速度取决于 API 提供商，高峰期可能超时
 - 行程规划质量取决于 LLM 能力，建议使用 DeepSeek-V3.2 或以上模型
 
 ## 🤝 贡献
