@@ -1,52 +1,31 @@
-# LangGraph 多 Agent 智能旅行助手 🌍✈️
+# 多Agent智能旅行规划助手 🌍✈️
 
-基于 LangGraph 框架构建的多 Agent 智能旅行规划系统，集成高德地图 MCP 服务，通过"代码搜索 + Agent 智能筛选 + 代码地理编码"的混合架构，生成带有精确坐标和地图标记的个性化旅行计划。
+基于LangGraph框架构建的多Agent智能旅行规划助手，集成高德地图MCP服务，提供个性化的旅行计划生成。
 
 ## ✨ 功能特点
 
-- 🤖 **多 Agent 协作**: 基于 LangGraph StateGraph 的 4 节点工作流（景点搜索 → 天气查询 → 酒店搜索 → 行程规划）
-- 🗺️ **高德地图 MCP 集成**: 通过 MCP 协议接入 16 个高德地图工具，支持 POI 搜索、地理编码、天气查询、路线规划
-- 📍 **精确地图标记**: 代码端批量地理编码补坐标，前端高德地图 JS API 展示景点标记和路线
-- 🧠 **混合架构**: 确定性工作（搜索、编码）交给代码，创造性工作（筛选、规划）交给 AI Agent
-- 🎨 **现代化前端**: Vue 3 + TypeScript + Ant Design Vue，响应式设计
-- ⚡ **容错降级**: 每个节点独立容错，Agent 失败自动降级到代码兜底
+- 🤖 **AI驱动的旅行规划**: 基于LangGraph框架的多智能体工作流,智能生成详细的多日旅程
+- 🗺️ **高德地图集成**: 通过MCP协议接入高德地图服务,支持景点搜索、路线规划、天气查询
+- 🧠 **智能工具调用**: Agent自动调用高德地图MCP工具,获取实时POI、路线和天气信息
+- 🎨 **现代化前端**: Vue3 + TypeScript + Vite,响应式设计,流畅的用户体验
+- 📱 **完整功能**: 包含住宿、交通、餐饮和景点游览时间推荐
 
-## 🏗️ 技术架构
+## 🏗️ 技术栈
 
-### 工作流节点
+### 后端
 
-```mermaid
-graph LR
-    A[search_attractions] --> B[check_weather]
-    B --> C[find_hotels]
-    C --> D[plan_itinerary]
-    D --> E[END]
-    A -->|error| F[handle_error]
-    B -->|error| F
-    C -->|error| F
-    D -->|error| F
-    F --> E
-```
+- **框架**: LangGraph (基于StateGraph的多智能体工作流)
+- **API**: FastAPI
+- **MCP工具**: amap-mcp-server (高德地图)
+- **LLM**: 支持多种LLM提供商(OpenAI, DeepSeek等)
 
-| 节点 | 工作方式 | 说明 |
-|------|---------|------|
-| search_attractions | 代码多关键词搜索 → Agent 筛选、描述 → 代码 geo 补坐标 | 多偏好分别搜索，去重取 Top 8 |
-| check_weather | Agent 调工具 → 解析，失败则代码兜底 | 高德天气 API 返回未来 4 天预报 |
-| find_hotels | 代码搜索 → Agent 筛选/描述 → 代码 geo 补坐标 | 按住宿偏好搜索，取 Top 5 |
-| plan_itinerary | Agent 综合所有数据生成完整 JSON 行程 | 唯一需要大量 LLM 推理的节点 |
+### 前端
 
-### 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 工作流编排 | LangGraph (StateGraph) |
-| Agent 框架 | LangChain (`create_agent`) |
-| MCP 工具 | amap-mcp-server (高德地图 16 个工具) |
-| LLM | 兼容 OpenAI API (DeepSeek, Qwen 等) |
-| 后端 API | FastAPI |
-| 前端框架 | Vue 3 + TypeScript + Vite |
-| UI 组件库 | Ant Design Vue |
-| 地图渲染 | 高德地图 JavaScript API |
+- **框架**: Vue 3 + TypeScript
+- **构建工具**: Vite
+- **UI组件库**: Ant Design Vue
+- **地图服务**: 高德地图 JavaScript API
+- **HTTP客户端**: Axios
 
 ## 📁 项目结构
 
@@ -54,38 +33,42 @@ graph LR
 LangGraph-Trip-Planner/
 ├── backend/
 │   ├── app/
-│   │   ├── workflows/              # LangGraph 工作流
-│   │   │   ├── trip_planner_graph.py   # 核心工作流（4 节点 + 错误处理）
-│   │   │   └── trip_planner_state.py   # TypedDict 状态定义
+│   │   ├── workflows/
+│   │   │   ├── trip_planner_graph.py      # LangGraph 核心工作流
+│   │   │   └── trip_planner_state.py      # 状态定义与初始状态
 │   │   ├── agents/
-│   │   │   └── agents.py           # 4 个 Agent 定义和 Prompt
+│   │   │   └── agents.py                  # 景点 / 天气 / 酒店 / 行程 Agent 定义
 │   │   ├── api/
-│   │   │   ├── main.py             # FastAPI 应用入口
+│   │   │   ├── main.py                    # FastAPI 应用入口
 │   │   │   └── routes/
-│   │   │       ├── trip.py         # POST /api/trip/plan
-│   │   │       ├── poi.py          # POI 搜索接口
-│   │   │       └── map.py          # 地图相关接口
+│   │   │       ├── trip.py                # 旅行规划接口
+│   │   │       ├── poi.py                 # POI 与图片接口
+│   │   │       └── map.py                 # 地图 / 路线 / 天气接口
 │   │   ├── services/
-│   │   │   ├── llm_service.py      # ChatOpenAI 单例
-│   │   │   ├── amap_service.py     # 高德地图直接调用
-│   │   │   └── unsplash_service.py # 图片服务（可选）
+│   │   │   ├── llm_service.py             # LLM 单例封装
+│   │   │   ├── amap_service.py            # 高德工具服务封装
+│   │   │   └── unsplash_service.py        # 景点图片服务
 │   │   ├── models/
-│   │   │   └── schemas.py          # Pydantic 数据模型
+│   │   │   └── schemas.py                 # Pydantic 数据模型
 │   │   ├── tools/
-│   │   │   └── amap_mcp_tools.py   # MCP 工具加载和缓存
-│   │   └── config.py               # 配置管理
-│   └── run.py                      # 启动脚本
+│   │   │   └── amap_mcp_tools.py          # 高德 MCP 工具加载与缓存
+│   │   └── config.py                      # 全局配置
+│   ├── env.example                        # 后端环境变量模板
+│   ├── requirements.txt                   # 后端依赖（如仓库中已提交）
+│   └── run.py                             # 后端启动脚本
 ├── frontend/
 │   ├── src/
 │   │   ├── views/
-│   │   │   ├── Home.vue            # 旅行表单页
-│   │   │   └── Result.vue          # 结果展示页（地图 + 行程）
+│   │   │   ├── Home.vue                   # 表单输入页
+│   │   │   └── Result.vue                 # 行程结果页（地图 / 导出 / 编辑）
 │   │   ├── services/
-│   │   │   └── api.ts              # Axios HTTP 客户端
+│   │   │   └── api.ts                     # API 请求封装
 │   │   ├── types/
-│   │   │   └── index.ts            # TypeScript 类型定义
+│   │   │   └── index.ts                   # 前端类型定义
 │   │   ├── App.vue
-│   │   └── main.ts                 # 路由定义
+│   │   └── main.ts                        # Vue 应用入口与路由
+│   ├── env.example                        # 前端环境变量模板
+│   ├── index.html
 │   └── vite.config.ts
 └── README.md
 ```
@@ -96,135 +79,151 @@ LangGraph-Trip-Planner/
 
 - Python 3.10+
 - Node.js 16+
-- npm 或 yarn
-- 高德地图 API Key（Web 服务 + JS API 安全密钥）
-- LLM API Key（支持 OpenAI API 格式的服务商）
+- 高德地图API密钥 (Web服务API和Web端(JS API))
+- LLM API密钥 (OpenAI/DeepSeek等)
 
 ### 后端安装
 
+1. 进入后端目录
+
 ```bash
 cd backend
-
-# 创建虚拟环境
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-
-# 安装依赖
-pip install fastapi uvicorn langchain langchain-openai langgraph langchain-mcp-adapters pydantic pydantic-settings python-dotenv httpx
-
-# 配置环境变量
-# 创建 .env 文件，填入以下内容：
 ```
 
-**`.env` 文件模板：**
-
-```dotenv
-# 高德地图
-AMAP_API_KEY=你的高德Web服务Key
-
-# LLM 配置
-LLM_API_KEY=你的API密钥
-LLM_BASE_URL=https://api.siliconflow.cn/v1
-LLM_MODEL_ID=deepseek-ai/DeepSeek-V3.2
-
-# 可选：Unsplash 图片
-UNSPLASH_ACCESS_KEY=
-UNSPLASH_SECRET_KEY=
-
-# Agent 配置（可选）
-AGENT_MAX_ITERATIONS=5
-AGENT_TEMPERATURE=0.7
-AGENT_TIMEOUT=300.0
-```
+2. 创建虚拟环境
 
 ```bash
-# 启动后端
+python -m venv venv
+venv\Scripts\activate
+# Mac: source venv/bin/activate 
+```
+
+3. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+4. 配置环境变量
+
+```bash
+cp .env.example .env
+# 编辑.env文件,填入你的API密钥
+```
+
+5. 启动后端服务
+
+```bash
 uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000
+
 ```
 
 ### 前端安装
 
+1. 进入前端目录
+
 ```bash
 cd frontend
+```
 
-# 安装依赖
+2. 安装依赖
+
+```bash
 npm install
+```
 
-# 在 src/views/Result.vue 中配置高德 JS API Key
-# 搜索 AMapLoader.load 找到 key 字段
+3. 配置环境变量
 
-# 启动开发服务器
+```bash
+# 创建 .env 文件, 填入高德地图 Web API Key 和 Web 端 JS API Key
+cp .env.example .env
+```
+
+4. 启动开发服务器
+
+```bash
 npm run dev
 ```
 
-访问 `http://localhost:5173` 开始使用。
+5. 打开浏览器访问 `http://localhost:5173`
 
-## 📝 使用说明
+## 📝 使用指南
 
-1. 填写目的地城市、旅行日期（只能选今天及以后）
-2. 选择交通方式、住宿偏好、旅行偏好标签
-3. 可选填写额外要求
-4. 点击"开始规划我的旅行"
-5. 等待 30-60 秒（取决于 LLM 响应速度）
-6. 查看结果：每日行程、景点地图标记、路线连接、天气预报、预算明细
+1. 在首页填写旅行信息:
+   - 目的地城市
+   - 旅行日期和天数
+   - 交通方式偏好
+   - 住宿偏好
+   - 旅行风格标签
+
+2. 点击"生成旅行计划"按钮
+
+3. 系统将:
+   - 调用 LangGraph 工作流生成初步计划
+   - Agent自动调用高德地图 MCP 工具搜索景点
+   - Agent获取天气信息和路线规划
+   - 整合所有信息生成完整行程
+
+4. 查看结果:
+   - 每日详细行程
+   - 景点信息与地图标记
+   - 交通路线规划
+   - 天气预报
+   - 餐饮推荐
 
 ## 🔧 核心实现
 
-### 景点搜索（代码 + Agent 混合）
+### LangGraph工作流集成
 
 ```python
-# 1. 代码多关键词搜索（快速、可靠）
-for kw in ["杭州旅游景点", "杭州历史古迹", "杭州公园风景区"]:
-    pois += search_tool.invoke({"keywords": kw, "city": "杭州", "citylimit": "true"})
+from langgraph.graph import StateGraph, END
+from app.workflows.trip_planner_graph import TripPlannerWorkflow
+from app.models.schemas import TripRequest
 
-# 2. Agent 智能筛选和描述（需要理解力）
-agent_result = attraction_agent.invoke("从以下 POI 中选出最适合旅游的 8 个...")
+# 创建旅行规划工作流
+workflow = TripPlannerWorkflow()
 
-# 3. 代码批量地理编码（快速、可靠）
-for attr in attractions:
-    geo_result = geo_tool.invoke({"address": f"杭州{attr.address}", "city": "杭州"})
-    attr.location = extract_location(geo_result)
+# 创建旅行请求
+request = TripRequest(
+    city="北京",
+    travel_days=3,
+    transportation="地铁",
+    accommodation="经济型酒店",
+    preferences=["历史文化", "公园"],
+    start_date="2024-10-01",
+    end_date="2024-10-03",
+    free_text_input="希望行程轻松一些"
+)
+
+# 执行工作流生成旅行计划
+trip_plan = workflow.plan_trip(request)
+print(f"生成 {len(trip_plan.days)} 天行程计划")
 ```
 
-### 高德 MCP 工具
+### MCP工具调用
 
-本项目使用的高德地图 MCP 工具：
+工作流中的智能体可以自动调用以下高德地图MCP工具:
 
-| 工具 | 用途 |
-|------|------|
-| `maps_text_search` | POI 关键词搜索（景点、酒店） |
-| `maps_geo` | 地址转经纬度坐标 |
-| `maps_weather` | 城市天气预报查询 |
-| `maps_search_detail` | POI 详情查询 |
-| `maps_regeocode` | 经纬度转地址 |
-| `maps_around_search` | 周边搜索 |
-| 路线规划系列 | 步行/驾车/公交/骑行路线 |
-| `maps_distance` | 距离测量 |
+- `maps_text_search`: 搜索景点POI
+- `maps_weather`: 查询天气
+- `maps_direction_walking_by_address`: 步行路线规划
+- `maps_direction_driving_by_address`: 驾车路线规划
+- `maps_direction_transit_integrated_by_address`: 公共交通路线规划
 
-## 📄 API 文档
+## 📄 API文档
 
-启动后端后访问 `http://localhost:8000/docs` 查看 Swagger 文档。
+启动后端服务后,访问 `http://localhost:8000/docs` 查看完整的API文档。
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/trip/plan` | POST | 生成旅行计划 |
-| `/api/map/poi` | GET | 搜索 POI |
-| `/api/map/weather` | GET | 查询天气 |
-| `/api/map/route` | POST | 规划路线 |
+主要端点:
 
-## ⚠️ 已知限制
+- `POST /api/trip/plan` - 生成旅行计划
+- `GET /api/map/poi` - 搜索POI
+- `GET /api/map/weather` - 查询天气
+- `POST /api/map/route` - 规划路线
 
-- 高德天气 API 只返回未来 4 天预报，无法查询历史天气
-- `maps_text_search` 返回的 POI 不含经纬度，需要额外调用 `maps_geo` 补充
-- LLM 响应速度取决于 API 提供商，高峰期可能超时
-- 行程规划质量取决于 LLM 能力，建议使用 DeepSeek-V3.2 或以上模型
+## 🤝 贡献指南
 
-## 🤝 贡献
-
-欢迎提交 Pull Request 或 Issue！
+欢迎提交Pull Request或Issue!
 
 ## 📜 开源协议
 
@@ -232,8 +231,11 @@ CC BY-NC-SA 4.0
 
 ## 🙏 致谢
 
-- [Datawhale hello-agents](https://github.com/datawhalechina/hello-agents) — 原始项目
-- [LangGraph](https://github.com/langchain-ai/langgraph) — 多 Agent 工作流框架
-- [LangChain](https://github.com/langchain-ai/langchain) — LLM 应用框架
-- [高德地图开放平台](https://lbs.amap.com/) — 地图服务
-- [amap-mcp-server](https://github.com/amap-mcp/amap-mcp-server) — 高德地图 MCP 服务器
+- [LangGraph](https://github.com/langchain-ai/langgraph) - 多智能体工作流框架
+- [LangChain](https://github.com/langchain-ai/langchain) - LLM应用开发框架
+- [高德地图开放平台](https://lbs.amap.com/) - 地图服务
+- [amap-mcp-server](https://github.com/sugarforever/amap-mcp-server) - 高德地图MCP服务器
+
+---
+
+**多Agent智能旅行助手** - 让旅行计划变得简单而智能 🌈
