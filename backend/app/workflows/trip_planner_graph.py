@@ -129,7 +129,7 @@ class TripPlannerWorkflow:
                 f"用户偏好: {prefs}\n"
                 f"旅行天数: {request.travel_days} 天\n"
                 f"请根据偏好用不同关键词多次搜索（如 '{request.city}历史古迹'、'{request.city}自然风光' 等），"
-                f"筛选出最适合的 8 个景点，并用 maps_geo 获取每个景点的坐标。"
+                f"筛选出最适合的 6 个景点，并用 maps_geo 获取每个景点的坐标。"
             )
 
             # 调用 Agent — Agent 自主执行 ReAct 循环
@@ -198,7 +198,7 @@ class TripPlannerWorkflow:
             query = (
                 f"请搜索 {request.city} 的酒店。\n"
                 f"用户住宿偏好: {request.accommodation}\n"
-                f"请搜索合适的酒店，筛选出 5 个最佳选择，"
+                f"请搜索合适的酒店，筛选出 3 个最佳选择，"
                 f"并用 maps_geo 获取每个酒店的坐标。"
             )
 
