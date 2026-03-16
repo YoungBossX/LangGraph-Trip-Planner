@@ -127,7 +127,3 @@ md5.text
 
 # prompts 文件夹
 prompts/
-
-# josn 文件
-*.json
-**/*.json
