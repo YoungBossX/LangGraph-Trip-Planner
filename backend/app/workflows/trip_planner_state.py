@@ -35,6 +35,10 @@ class TripPlannerState(TypedDict):
     error: Optional[str]
     current_step: Annotated[str, update_step]  # 跟踪当前执行步骤
 
+    # 错误恢复
+    failed_node: Optional[str]
+    retry_count: int 
+
 
 # 状态辅助函数
 def create_initial_state(request: TripRequest, user_input: str = "") -> TripPlannerState:
@@ -48,5 +52,7 @@ def create_initial_state(request: TripRequest, user_input: str = "") -> TripPlan
         "messages": [],
         "trip_plan": None,
         "error": None,
-        "current_step": "started"
+        "current_step": "started",
+        "failed_node": None,
+        "retry_count": 0,
     }

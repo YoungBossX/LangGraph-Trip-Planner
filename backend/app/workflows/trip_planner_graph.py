@@ -70,24 +70,26 @@ class TripPlannerWorkflow:
 
             # 构建工作流图
             self.graph = self._build_graph()
-            logger.info("✅ 纯 Agent 工作流初始化成功")
+            logger.info("✅ Agent 工作流初始化成功")
 
         except Exception as e:
             logger.error(f"❌ 工作流初始化失败: {str(e)}", exc_info=True)
             raise
 
-    # ========== StateGraph 构建（保持不变） ==========
+    # ========== StateGraph 构建 ==========
 
     def _build_graph(self) -> StateGraph:
+        # 构建状态图，节点函数保持不变，每个节点内部由 Agent 自主调用工具
         workflow = StateGraph(TripPlannerState)
+        # 添加节点
         workflow.add_node("search_attractions", self._search_attractions)
         workflow.add_node("check_weather", self._check_weather)
         workflow.add_node("find_hotels", self._find_hotels)
         workflow.add_node("plan_itinerary", self._plan_itinerary)
         workflow.add_node("handle_error", self._handle_error)
-
+        # 设置入口节点
         workflow.set_entry_point("search_attractions")
-
+        # 添加条件边：每个节点根据是否有 error 决定继续下一步还是跳到错误处理
         workflow.add_conditional_edges(
             "search_attractions", self._check_error,
             {"continue": "check_weather", "error": "handle_error"}
@@ -104,13 +106,37 @@ class TripPlannerWorkflow:
             "plan_itinerary", self._check_error,
             {"continue": END, "error": "handle_error"}
         )
-        workflow.add_edge("handle_error", END)
+
+        workflow.add_conditional_edges(
+            "handle_error", self._route_after_error,
+            {
+            "retry_search_attractions": "search_attractions",
+            "retry_check_weather": "check_weather",
+            "retry_find_hotels": "find_hotels",
+            "retry_plan_itinerary": "plan_itinerary",
+            "skip_to_plan": "plan_itinerary",
+            "end": END
+            }
+        )
+
         return workflow.compile()
+    
+    def _route_after_error(self, state: TripPlannerState) -> str:
+        retry_count = state.get("retry_count", 0)
+        failed_node = state.get("failed_node", "")
+
+        if retry_count < 2 and failed_node:
+            return f"retry_{failed_node}"
+
+        if state.get("attractions") or state.get("weather_info"):
+            return "skip_to_plan"
+
+        return "end"
 
     def _check_error(self, state: TripPlannerState) -> str:
         return "error" if state.get("error") else "continue"
 
-    # ========== 节点: 景点搜索（纯 Agent） ==========
+    # ========== 节点: 景点搜索（Agent） ==========
 
     def _search_attractions(self, state: TripPlannerState) -> Dict[str, Any]:
         """景点搜索节点：Agent 自主调用 search + geo 工具
@@ -151,9 +177,9 @@ class TripPlannerWorkflow:
             }
         except Exception as e:
             logger.error(f"景点搜索失败: {str(e)}", exc_info=True)
-            return {"error": f"景点搜索失败: {str(e)}", "current_step": "error"}
+            return {"error": f"景点搜索失败: {str(e)}", "current_step": "error", "failed_node": "search_attractions"}
 
-    # ========== 节点: 天气查询（纯 Agent） ==========
+    # ========== 节点: 天气查询（Agent） ==========
 
     def _check_weather(self, state: TripPlannerState) -> Dict[str, Any]:
         """天气查询节点：Agent 自主调用 weather 工具"""
@@ -182,9 +208,9 @@ class TripPlannerWorkflow:
             }
         except Exception as e:
             logger.error(f"天气查询失败: {str(e)}", exc_info=True)
-            return {"error": f"天气查询失败: {str(e)}", "current_step": "error"}
+            return {"error": f"天气查询失败: {str(e)}", "current_step": "error", "failed_node": "check_weather"}
 
-    # ========== 节点: 酒店搜索（纯 Agent） ==========
+    # ========== 节点: 酒店搜索（Agent） ==========
 
     def _find_hotels(self, state: TripPlannerState) -> Dict[str, Any]:
         """酒店搜索节点：Agent 自主调用 search + geo 工具
@@ -220,13 +246,13 @@ class TripPlannerWorkflow:
             }
         except Exception as e:
             logger.error(f"酒店搜索失败: {str(e)}", exc_info=True)
-            return {"error": f"酒店搜索失败: {str(e)}", "current_step": "error"}
+            return {"error": f"酒店搜索失败: {str(e)}", "current_step": "error", "failed_node": "find_hotels"}
 
-    # ========== 节点: 行程规划（保持不变，本来就是纯 Agent） ==========
+    # ========== 节点: 行程规划（保持不变，本来就是 Agent） ==========
 
     def _plan_itinerary(self, state: TripPlannerState) -> Dict[str, Any]:
         """行程规划节点：Agent 综合所有数据生成行程计划"""
-        logger.info("📋 [纯Agent] 生成行程计划...")
+        logger.info("📋 [Agent] 生成行程计划...")
         try:
             query = self._build_planner_query(
                 state["request"], state["attractions"],
@@ -255,19 +281,35 @@ class TripPlannerWorkflow:
             }
         except Exception as e:
             logger.error(f"行程规划失败: {str(e)}", exc_info=True)
-            return {"error": f"行程规划失败: {str(e)}", "current_step": "error"}
+            return {"error": f"行程规划失败: {str(e)}", "current_step": "error", "failed_node": "plan_itinerary"}
 
     # ========== 节点: 错误处理 ==========
 
     def _handle_error(self, state: TripPlannerState) -> Dict[str, Any]:
+        retry_count = state.get("retry_count", 0)
+        failed_node = state.get("failed_node", "未知")
         error_msg = state.get("error", "未知错误")
-        logger.warning(f"⚠️  处理错误: {error_msg}")
-        fallback_plan = self._create_fallback_plan(state["request"])
+
+        logger.warning(f"⚠️ 节点 [{failed_node}] 失败: {error_msg}, 已重试 {retry_count} 次")
+
+        if retry_count < 2:
+            return {
+                "error": None,
+                "retry_count": retry_count + 1,
+            }
+
+        if state.get("attractions") or state.get("weather_info"):
+            logger.info("有部分数据，跳过失败节点继续规划")
+            return {
+                "error": None,
+                "failed_node": None,
+            }
+
+        logger.info("无可用数据，生成备用计划")
         return {
-            "trip_plan": fallback_plan,
+            "trip_plan": self._create_fallback_plan(state["request"]),
             "error": None,
-            "current_step": "error_handled",
-            "messages": [{"role": "assistant", "content": f"遇到错误，已生成备用计划: {error_msg}"}]
+            "failed_node": None,
         }
 
     # ========== Agent 输出解析：景点 ==========
@@ -826,7 +868,7 @@ class TripPlannerWorkflow:
 
     def plan_trip(self, request: TripRequest) -> TripPlan:
         logger.info(f"\n{'='*60}")
-        logger.info(f"🚀 开始纯 Agent 旅行规划工作流...")
+        logger.info(f"🚀 开始 Agent 旅行规划工作流...")
         logger.info(f"目的地: {request.city}")
         logger.info(f"{'='*60}\n")
 
