@@ -300,6 +300,7 @@ class TripPlannerWorkflow:
             return {
                 "error": None,
                 "retry_count": retry_count + 1,
+                "last_failed_node": failed_node,
             }
 
         if state.get("attractions") or state.get("weather_info"):
