@@ -14,10 +14,10 @@
 
 ### 后端
 
-- **框架**: LangGraph (基于StateGraph的多智能体工作流)
+- **框架**: LangGraph（基于StateGraph的多智能体工作流）
 - **API**: FastAPI
-- **MCP工具**: amap-mcp-server (高德地图)
-- **LLM**: 支持多种LLM提供商(OpenAI, DeepSeek等)
+- **MCP工具**: amap-mcp-server（高德地图)
+- **LLM**: 支持多种LLM提供商（OpenAI, DeepSeek等）
 
 ### 前端
 
