@@ -37,6 +37,7 @@ class TripPlannerState(TypedDict):
 
     # 错误恢复
     failed_node: Optional[str]
+    last_failed_node: Optional[str]
     retry_count: int 
 
 
@@ -54,5 +55,6 @@ def create_initial_state(request: TripRequest, user_input: str = "") -> TripPlan
         "error": None,
         "current_step": "started",
         "failed_node": None,
+        "last_failed_node": None,
         "retry_count": 0,
     }

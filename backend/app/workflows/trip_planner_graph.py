@@ -288,7 +288,11 @@ class TripPlannerWorkflow:
     def _handle_error(self, state: TripPlannerState) -> Dict[str, Any]:
         retry_count = state.get("retry_count", 0)
         failed_node = state.get("failed_node", "未知")
+        last_failed = state.get("last_failed_node", "")
         error_msg = state.get("error", "未知错误")
+
+        if failed_node != last_failed:
+            retry_count = 0
 
         logger.warning(f"⚠️ 节点 [{failed_node}] 失败: {error_msg}, 已重试 {retry_count} 次")
 
