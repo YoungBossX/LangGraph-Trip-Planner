@@ -164,7 +164,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据提供的景点、天
 
 def create_attraction_search_agent(tools: List[BaseTool]):
     """创建景点搜索智能体 — 自主调用 search + geo 工具"""
-    logger.info("创建景点搜索智能体 (纯 Agent 模式)...")
+    logger.info("创建景点搜索智能体 (Agent 模式)...")
     llm = get_llm()
     agent_graph = create_agent(
         model=llm,
@@ -178,7 +178,7 @@ def create_attraction_search_agent(tools: List[BaseTool]):
 
 def create_weather_agent(tools: List[BaseTool]):
     """创建天气查询智能体 — 自主调用 weather 工具"""
-    logger.info("创建天气查询智能体 (纯 Agent 模式)...")
+    logger.info("创建天气查询智能体 (Agent 模式)...")
     llm = get_llm()
     agent_graph = create_agent(
         model=llm,
@@ -192,7 +192,7 @@ def create_weather_agent(tools: List[BaseTool]):
 
 def create_hotel_agent(tools: List[BaseTool]):
     """创建酒店推荐智能体 — 自主调用 search + geo 工具"""
-    logger.info("创建酒店推荐智能体 (纯 Agent 模式)...")
+    logger.info("创建酒店推荐智能体 (Agent 模式)...")
     llm = get_llm()
     agent_graph = create_agent(
         model=llm,
