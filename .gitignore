@@ -131,3 +131,7 @@ prompts/
 # josn 文件
 *.json
 **/*.json
+
+# jsonl 文件
+*.jsonl
+**/*.jsonl

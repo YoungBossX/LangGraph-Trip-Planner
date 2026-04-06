@@ -18,7 +18,6 @@ from ..config import get_settings
 # 设置日志记录
 logger = logging.getLogger(__name__)
 
-
 def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
     """包装异步工具以支持同步调用
 
