@@ -23,6 +23,20 @@ from ..models.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# 节点名称常量
+NODE_ATTRACTIONS = "search_attractions"
+NODE_WEATHER = "check_weather"
+NODE_HOTELS = "find_hotels"
+NODE_PLAN = "plan_itinerary"
+NODE_ERROR = "handle_error"
+
+_RETRY_ROUTES = {
+    NODE_ATTRACTIONS: NODE_ATTRACTIONS,
+    NODE_WEATHER: NODE_WEATHER,
+    NODE_HOTELS: NODE_HOTELS,
+    NODE_PLAN: NODE_PLAN,
+}
+
 
 class TripPlannerWorkflow:
     """多智能体旅行规划工作流 — Agent 版本
@@ -82,39 +96,39 @@ class TripPlannerWorkflow:
         # 构建状态图，节点函数保持不变，每个节点内部由 Agent 自主调用工具
         workflow = StateGraph(TripPlannerState)
         # 添加节点
-        workflow.add_node("search_attractions", self._search_attractions)
-        workflow.add_node("check_weather", self._check_weather)
-        workflow.add_node("find_hotels", self._find_hotels)
-        workflow.add_node("plan_itinerary", self._plan_itinerary)
-        workflow.add_node("handle_error", self._handle_error)
+        workflow.add_node(NODE_ATTRACTIONS, self._search_attractions)
+        workflow.add_node(NODE_WEATHER, self._check_weather)
+        workflow.add_node(NODE_HOTELS, self._find_hotels)
+        workflow.add_node(NODE_PLAN, self._plan_itinerary)
+        workflow.add_node(NODE_ERROR, self._handle_error)
         # 设置入口节点
-        workflow.set_entry_point("search_attractions")
-        # 添加条件边：每个节点根据是否有 error 决定继续下一步还是跳到错误处理
+        workflow.set_entry_point(NODE_ATTRACTIONS)
+        # 添加条件边
         workflow.add_conditional_edges(
-            "search_attractions", self._check_error,
-            {"continue": "check_weather", "error": "handle_error"}
+            NODE_ATTRACTIONS, self._check_error,
+            {"continue": NODE_WEATHER, "error": NODE_ERROR}
         )
         workflow.add_conditional_edges(
-            "check_weather", self._check_error,
-            {"continue": "find_hotels", "error": "handle_error"}
+            NODE_WEATHER, self._check_error,
+            {"continue": NODE_HOTELS, "error": NODE_ERROR}
         )
         workflow.add_conditional_edges(
-            "find_hotels", self._check_error,
-            {"continue": "plan_itinerary", "error": "handle_error"}
+            NODE_HOTELS, self._check_error,
+            {"continue": NODE_PLAN, "error": NODE_ERROR}
         )
         workflow.add_conditional_edges(
-            "plan_itinerary", self._check_error,
-            {"continue": END, "error": "handle_error"}
+            NODE_PLAN, self._check_error,
+            {"continue": END, "error": NODE_ERROR}
         )
 
         workflow.add_conditional_edges(
-            "handle_error", self._route_after_error,
+            NODE_ERROR, self._route_after_error,
             {
-            "retry_search_attractions": "search_attractions",
-            "retry_check_weather": "check_weather",
-            "retry_find_hotels": "find_hotels",
-            "retry_plan_itinerary": "plan_itinerary",
-            "skip_to_plan": "plan_itinerary",
+            f"retry_{NODE_ATTRACTIONS}": NODE_ATTRACTIONS,
+            f"retry_{NODE_WEATHER}": NODE_WEATHER,
+            f"retry_{NODE_HOTELS}": NODE_HOTELS,
+            f"retry_{NODE_PLAN}": NODE_PLAN,
+            "skip_to_plan": NODE_PLAN,
             "end": END
             }
         )
@@ -125,7 +139,7 @@ class TripPlannerWorkflow:
         retry_count = state.get("retry_count", 0)
         failed_node = state.get("failed_node", "")
 
-        if retry_count < 2 and failed_node:
+        if retry_count < 2 and failed_node and failed_node in _RETRY_ROUTES:
             return f"retry_{failed_node}"
 
         if state.get("attractions") or state.get("weather_info"):
@@ -177,7 +191,7 @@ class TripPlannerWorkflow:
             }
         except Exception as e:
             logger.error(f"景点搜索失败: {str(e)}", exc_info=True)
-            return {"error": f"景点搜索失败: {str(e)}", "current_step": "error", "failed_node": "search_attractions"}
+            return {"error": f"景点搜索失败: {str(e)}", "current_step": "error", "failed_node": NODE_ATTRACTIONS}
 
     # ========== 节点: 天气查询（Agent） ==========
 
@@ -208,7 +222,7 @@ class TripPlannerWorkflow:
             }
         except Exception as e:
             logger.error(f"天气查询失败: {str(e)}", exc_info=True)
-            return {"error": f"天气查询失败: {str(e)}", "current_step": "error", "failed_node": "check_weather"}
+            return {"error": f"天气查询失败: {str(e)}", "current_step": "error", "failed_node": NODE_WEATHER}
 
     # ========== 节点: 酒店搜索（Agent） ==========
 
@@ -246,7 +260,7 @@ class TripPlannerWorkflow:
             }
         except Exception as e:
             logger.error(f"酒店搜索失败: {str(e)}", exc_info=True)
-            return {"error": f"酒店搜索失败: {str(e)}", "current_step": "error", "failed_node": "find_hotels"}
+            return {"error": f"酒店搜索失败: {str(e)}", "current_step": "error", "failed_node": NODE_HOTELS}
 
     # ========== 节点: 行程规划（保持不变，本来就是 Agent） ==========
 
@@ -281,7 +295,7 @@ class TripPlannerWorkflow:
             }
         except Exception as e:
             logger.error(f"行程规划失败: {str(e)}", exc_info=True)
-            return {"error": f"行程规划失败: {str(e)}", "current_step": "error", "failed_node": "plan_itinerary"}
+            return {"error": f"行程规划失败: {str(e)}", "current_step": "error", "failed_node": NODE_PLAN}
 
     # ========== 节点: 错误处理 ==========
 
@@ -890,6 +904,14 @@ class TripPlannerWorkflow:
         logger.info(f"{'='*60}\n")
 
         return final_state["trip_plan"]
+
+    async def astream_plan(self, request: TripRequest):
+        """异步流式执行工作流，yield (node_name, state_update)"""
+        logger.info(f"🚀 开始流式旅行规划: {request.city}")
+        initial_state: TripPlannerState = create_initial_state(request)
+        async for chunk in self.graph.astream(initial_state, config={"recursion_limit": 80}):
+            for node_name, node_output in chunk.items():
+                yield node_name, node_output
 
 # ========== 全局工作流实例 ==========
 

@@ -209,7 +209,7 @@
 import { ref, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { generateTripPlan } from '@/services/api'
+import { generateTripPlanStream } from '@/services/api'
 import type { TripFormData } from '@/types'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -265,23 +265,13 @@ const handleSubmit = async () => {
   loadingProgress.value = 0
   loadingStatus.value = '正在初始化...'
 
-  // 模拟进度更新
-  const progressInterval = setInterval(() => {
-    if (loadingProgress.value < 90) {
-      loadingProgress.value += 10
-
-      // 更新状态文本
-      if (loadingProgress.value <= 30) {
-        loadingStatus.value = '🔍 正在搜索景点...'
-      } else if (loadingProgress.value <= 50) {
-        loadingStatus.value = '🌤️ 正在查询天气...'
-      } else if (loadingProgress.value <= 70) {
-        loadingStatus.value = '🏨 正在推荐酒店...'
-      } else {
-        loadingStatus.value = '📋 正在生成行程计划...'
-      }
-    }
-  }, 500)
+  const progressMap: Record<string, { pct: number; label: string }> = {
+    search_attractions: { pct: 25, label: '🔍 正在搜索景点...' },
+    check_weather: { pct: 50, label: '🌤️ 正在查询天气...' },
+    find_hotels: { pct: 75, label: '🏨 正在搜索酒店...' },
+    plan_itinerary: { pct: 90, label: '📋 正在生成行程计划...' },
+    handle_error: { pct: loadingProgress.value, label: '⚠️ 正在恢复...' },
+  }
 
   try {
     const requestData: TripFormData = {
@@ -295,27 +285,27 @@ const handleSubmit = async () => {
       free_text_input: formData.free_text_input
     }
 
-    const response = await generateTripPlan(requestData)
+    const response = await generateTripPlanStream(requestData, (step, msg) => {
+      const info = progressMap[step]
+      if (info) {
+        loadingProgress.value = info.pct
+        loadingStatus.value = info.label
+      } else {
+        loadingStatus.value = msg
+      }
+    })
 
-    clearInterval(progressInterval)
     loadingProgress.value = 100
     loadingStatus.value = '✅ 完成!'
 
     if (response.success && response.data) {
-      // 保存到sessionStorage
       sessionStorage.setItem('tripPlan', JSON.stringify(response.data))
-
       message.success('旅行计划生成成功!')
-
-      // 短暂延迟后跳转
-      setTimeout(() => {
-        router.push('/result')
-      }, 500)
+      setTimeout(() => { router.push('/result') }, 500)
     } else {
       message.error(response.message || '生成失败')
     }
   } catch (error: any) {
-    clearInterval(progressInterval)
     message.error(error.message || '生成旅行计划失败,请稍后重试')
   } finally {
     setTimeout(() => {

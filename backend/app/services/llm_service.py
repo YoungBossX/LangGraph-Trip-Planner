@@ -1,12 +1,8 @@
+import os
+from typing import Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models.chat_models import BaseChatModel
-import os
-import dotenv
-from pathlib import Path
-from typing import Optional
 from ..config import settings
-
-dotenv.load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 # 全局 LLM 实例
 _llm_instance: Optional[BaseChatModel] = None

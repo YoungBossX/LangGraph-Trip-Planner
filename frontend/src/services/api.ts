@@ -36,7 +36,60 @@ apiClient.interceptors.response.use(
 )
 
 /**
- * 生成旅行计划
+ * 流式生成旅行计划 (SSE)
+ * onProgress: 收到进度事件时回调
+ * 返回完整的 TripPlanResponse
+ */
+export async function generateTripPlanStream(
+  formData: TripFormData,
+  onProgress: (step: string, message: string) => void
+): Promise<TripPlanResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/trip/plan-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData),
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('响应体不支持流式读取')
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    let eventType = ''
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        eventType = line.slice(7).trim()
+      } else if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.slice(6))
+        if (eventType === 'progress') {
+          onProgress(data.step, data.message)
+        } else if (eventType === 'result') {
+          return data as TripPlanResponse
+        } else if (eventType === 'error') {
+          throw new Error(data.message || '生成失败')
+        }
+      }
+    }
+  }
+
+  throw new Error('流式响应未返回结果')
+}
+
+/**
+ * 生成旅行计划 (非流式，保留兼容)
  */
 export async function generateTripPlan(formData: TripFormData): Promise<TripPlanResponse> {
   try {

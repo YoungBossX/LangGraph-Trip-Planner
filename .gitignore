@@ -96,6 +96,7 @@ clap-htsat-unfused
 # md文件
 *.md
 **/*.md
+!CLAUDE.md
 
 # pdf文件
 *.pdf
