@@ -1,18 +1,16 @@
 """高德地图MCP工具 (LangChain MCP适配器版本)"""
 
-from typing import List, Dict, Any, Optional, Type
+from typing import List, Optional
 import asyncio
 import logging
 import nest_asyncio
-import json
 try:
     from langchain_mcp_adapters.tools import load_mcp_tools
     MCP_ADAPTERS_AVAILABLE = True
 except ImportError:
     MCP_ADAPTERS_AVAILABLE = False
     load_mcp_tools = None
-from langchain_core.tools import BaseTool, StructuredTool, tool
-from pydantic import BaseModel, Field
+from langchain_core.tools import BaseTool, StructuredTool
 from ..config import get_settings
 
 # 设置日志记录
@@ -107,11 +105,6 @@ async def create_amap_mcp_tools() -> List[BaseTool]:
         logger.error("AMAP_API_KEY 未配置")
         return []
 
-    # 如果 MCP 适配器不可用，则返回模拟工具
-    # if not MCP_ADAPTERS_AVAILABLE:
-    #     logger.info("MCP适配器不可用，返回模拟工具")
-    #     return create_mock_tools()
-
     if not MCP_ADAPTERS_AVAILABLE:
         raise RuntimeError("langchain_mcp_adapters 未安装，无法加载高德 MCP 工具")
 
@@ -177,7 +170,7 @@ def get_amap_mcp_tools() -> List[BaseTool]:
 
 
 def get_amap_essential_tools() -> List[BaseTool]:
-    """获取主要的高德地图工具（手动配置备用方案）"""
+    """获取主要的高德地图工具（过滤 text_search + weather）"""
     settings = get_settings()
 
     if not settings.amap_api_key:
@@ -249,10 +242,6 @@ def get_cached_amap_tools() -> List[BaseTool]:
             logger.warning("自动加载工具失败，尝试使用主要工具...")
             tools = get_amap_essential_tools()
 
-        # 如果主要工具也失败，使用模拟工具
-        # if not tools:
-        #     logger.warning("所有真实工具加载失败，使用模拟工具...")
-        #     tools = create_mock_tools()
         if not tools:
             raise RuntimeError("高德 MCP 工具加载失败，请检查 uvx/amap-mcp-server/AMAP_API_KEY")
 
@@ -267,128 +256,3 @@ def clear_tools_cache():
     _cached_tools = None
     logger.info("工具缓存已清空")
 
-
-# ============ 模拟工具（当MCP服务器不可用时）============
-
-class SearchInput(BaseModel):
-    """景点搜索输入参数"""
-    query: str = Field(description="搜索查询，如'杭州景点'")
-    city: str = Field(description="城市名称")
-
-
-class WeatherInput(BaseModel):
-    """天气查询输入参数"""
-    city: str = Field(description="城市名称")
-
-
-def create_mock_tools() -> List[BaseTool]:
-    """创建模拟工具用于测试和开发"""
-    logger.info("创建模拟工具...")
-
-    @tool("maps_text_search", args_schema=SearchInput)
-    def mock_search_tool(query: str, city: str) -> str:
-        """模拟景点搜索工具"""
-        logger.info(f"模拟搜索: {query} in {city}")
-
-        # 返回模拟的景点数据
-        mock_results = [
-            {
-                "name": f"{city}著名景点1",
-                "address": f"{city}市某区某路1号",
-                "location": {"longitude": 116.397128, "latitude": 39.916527},
-                "visit_duration": 120,
-                "description": f"这是{city}的著名景点，历史悠久，值得一游",
-                "category": "历史文化",
-                "ticket_price": 60
-            },
-            {
-                "name": f"{city}著名景点2",
-                "address": f"{city}市某区某路2号",
-                "location": {"longitude": 116.397128, "latitude": 39.916527},
-                "visit_duration": 90,
-                "description": f"这是{city}的另一个著名景点，风景优美",
-                "category": "公园",
-                "ticket_price": 40
-            }
-        ]
-
-        return json.dumps(mock_results, ensure_ascii=False)
-
-    @tool("maps_weather", args_schema=WeatherInput)
-    def mock_weather_tool(city: str) -> str:
-        """模拟天气查询工具"""
-        logger.info(f"模拟天气查询: {city}")
-
-        # 返回模拟的天气数据
-        mock_weather = [
-            {
-                "date": "2024-10-01",
-                "day_weather": "晴",
-                "night_weather": "多云",
-                "day_temp": 25,
-                "night_temp": 15,
-                "wind_direction": "南风",
-                "wind_power": "1-3级"
-            },
-            {
-                "date": "2024-10-02",
-                "day_weather": "多云",
-                "night_weather": "阴",
-                "day_temp": 23,
-                "night_temp": 16,
-                "wind_direction": "北风",
-                "wind_power": "2-4级"
-            },
-            {
-                "date": "2024-10-03",
-                "day_weather": "小雨",
-                "night_weather": "阴",
-                "day_temp": 20,
-                "night_temp": 14,
-                "wind_direction": "东风",
-                "wind_power": "1-2级"
-            }
-        ]
-
-        return json.dumps(mock_weather, ensure_ascii=False)
-
-    @tool("maps_hotel_search")
-    def mock_hotel_tool(query: str) -> str:
-        """模拟酒店搜索工具"""
-        logger.info(f"模拟酒店搜索: {query}")
-
-        # 返回模拟的酒店数据
-        mock_hotels = [
-            {
-                "name": f"{query.split()[0]}经济型酒店1",
-                "address": f"{query.split()[0]}市某区某路10号",
-                "location": {"longitude": 116.397128, "latitude": 39.916527},
-                "price_range": "200-400元",
-                "rating": "4.2",
-                "distance": "距离市中心2公里",
-                "type": "经济型酒店",
-                "estimated_cost": 300
-            },
-            {
-                "name": f"{query.split()[0]}经济型酒店2",
-                "address": f"{query.split()[0]}市某区某路20号",
-                "location": {"longitude": 116.397128, "latitude": 39.916527},
-                "price_range": "150-350元",
-                "rating": "4.0",
-                "distance": "距离景点1公里",
-                "type": "经济型酒店",
-                "estimated_cost": 250
-            }
-        ]
-
-        return json.dumps(mock_hotels, ensure_ascii=False)
-
-    # 创建工具列表
-    tools = [
-        mock_search_tool,
-        mock_weather_tool,
-        mock_hotel_tool
-    ]
-
-    logger.info(f"✅ 创建了 {len(tools)} 个模拟工具")
-    return tools

@@ -41,20 +41,24 @@ LangGraph-Trip-Planner/
 │   │   ├── api/
 │   │   │   ├── main.py                    # FastAPI 应用入口
 │   │   │   └── routes/
-│   │   │       ├── trip.py                # 旅行规划接口
-│   │   │       ├── poi.py                 # POI 与图片接口
-│   │   │       └── map.py                 # 地图 / 路线 / 天气接口
+│   │   │       ├── trip.py                # 旅行规划接口（含 SSE 流式）
+│   │   │       └── poi.py                 # 景点图片接口
 │   │   ├── services/
 │   │   │   ├── llm_service.py             # LLM 单例封装
-│   │   │   ├── amap_service.py            # 高德工具服务封装
 │   │   │   └── unsplash_service.py        # 景点图片服务
 │   │   ├── models/
 │   │   │   └── schemas.py                 # Pydantic 数据模型
 │   │   ├── tools/
 │   │   │   └── amap_mcp_tools.py          # 高德 MCP 工具加载与缓存
 │   │   └── config.py                      # 全局配置
+│   ├── tests/
+│   │   └── test_json_parsing.py           # JSON 解析层单元测试（24 用例）
+│   ├── evals/
+│   │   ├── eval_runner.py                 # 离线评测脚本
+│   │   └── eval_cases.jsonl              # 评测用例
+│   ├── pyproject.toml                     # Ruff + pytest 配置
 │   ├── env.example                        # 后端环境变量模板
-│   ├── requirements.txt                   # 后端依赖（如仓库中已提交）
+│   ├── requirements.txt                   # 后端依赖
 │   └── run.py                             # 后端启动脚本
 ├── frontend/
 │   ├── src/
@@ -62,7 +66,7 @@ LangGraph-Trip-Planner/
 │   │   │   ├── Home.vue                   # 表单输入页
 │   │   │   └── Result.vue                 # 行程结果页（地图 / 导出 / 编辑）
 │   │   ├── services/
-│   │   │   └── api.ts                     # API 请求封装
+│   │   │   └── api.ts                     # API 请求封装（含 SSE 流式）
 │   │   ├── types/
 │   │   │   └── index.ts                   # 前端类型定义
 │   │   ├── App.vue
@@ -70,6 +74,7 @@ LangGraph-Trip-Planner/
 │   ├── env.example                        # 前端环境变量模板
 │   ├── index.html
 │   └── vite.config.ts
+├── CLAUDE.md                              # Claude Code 项目指南
 └── README.md
 ```
 
@@ -202,13 +207,12 @@ print(f"生成 {len(trip_plan.days)} 天行程计划")
 
 ### MCP工具调用
 
-工作流中的智能体可以自动调用以下高德地图MCP工具:
+工作流中的智能体按职能调用不同 MCP 工具：
 
-- `maps_text_search`: 搜索景点POI
-- `maps_weather`: 查询天气
-- `maps_direction_walking_by_address`: 步行路线规划
-- `maps_direction_driving_by_address`: 驾车路线规划
-- `maps_direction_transit_integrated_by_address`: 公共交通路线规划
+- 景点 Agent：`maps_text_search`（关键词搜索）+ `maps_geo`（补坐标）
+- 天气 Agent：`maps_weather`（天气预报）
+- 酒店 Agent：`maps_text_search` + `maps_geo`
+- 规划 Agent：无工具（纯推理生成 JSON 行程）
 
 ## 📄 API文档
 
@@ -217,9 +221,9 @@ print(f"生成 {len(trip_plan.days)} 天行程计划")
 主要端点:
 
 - `POST /api/trip/plan` - 生成旅行计划
-- `GET /api/map/poi` - 搜索POI
-- `GET /api/map/weather` - 查询天气
-- `POST /api/map/route` - 规划路线
+- `POST /api/trip/plan-stream` - 流式生成旅行计划（SSE，实时进度推送）
+- `GET /api/poi/photo?name=xxx` - 获取景点图片
+- `GET /health` - 健康检查
 
 ## 🤝 贡献指南
 

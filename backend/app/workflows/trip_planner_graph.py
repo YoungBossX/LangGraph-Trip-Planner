@@ -10,7 +10,6 @@ from typing import Dict, Any, List, Optional
 import json
 import re
 import logging
-from datetime import datetime, timedelta
 from langgraph.graph import StateGraph, END
 
 from .trip_planner_state import TripPlannerState, create_initial_state
@@ -324,10 +323,9 @@ class TripPlannerWorkflow:
                 "failed_node": None,
             }
 
-        logger.info("无可用数据，生成备用计划")
+        logger.error("所有节点均失败且无可用数据，终止规划")
         return {
-            "trip_plan": self._create_fallback_plan(state["request"]),
-            "error": None,
+            "error": f"所有节点均失败（最后失败: {failed_node}: {error_msg}），无法生成计划",
             "failed_node": None,
         }
 
@@ -725,12 +723,12 @@ class TripPlannerWorkflow:
             data = json.loads(json_str)
         except Exception as e:
             logger.error(f"解析行程计划 JSON 失败: {e}")
-            return self._create_fallback_plan(request)
+            raise ValueError(f"行程计划 JSON 解析失败: {e}") from e
 
         if isinstance(data, dict) and isinstance(data.get("trip_plan"), dict):
             data = data["trip_plan"]
         if not isinstance(data, dict):
-            return self._create_fallback_plan(request)
+            raise ValueError(f"行程计划 JSON 格式错误：期望 JSON 对象，实际为 {type(data).__name__}")
 
         trip_plan = TripPlan(
             city=data.get("city", request.city),
@@ -840,48 +838,9 @@ class TripPlannerWorkflow:
                 logger.warning(f"预算解析失败: {e}")
 
         if not trip_plan.days:
-            return self._create_fallback_plan(request)
+            raise ValueError("行程计划解析后 days 为空（Planner Agent 未正确生成每日行程）")
 
         return trip_plan
-
-    # ========== 备用计划 ==========
-
-    def _create_fallback_plan(self, request: TripRequest) -> TripPlan:
-        try:
-            start_date = datetime.strptime(request.start_date, "%Y-%m-%d")
-        except ValueError:
-            start_date = datetime.now()
-
-        days = []
-        for i in range(request.travel_days):
-            current = start_date + timedelta(days=i)
-            days.append(DayPlan(
-                date=current.strftime("%Y-%m-%d"), day_index=i,
-                description=f"第{i+1}天行程",
-                transportation=request.transportation,
-                accommodation=request.accommodation,
-                attractions=[
-                    Attraction(
-                        name=f"{request.city}景点{j+1}", address=f"{request.city}市",
-                        location=Location(
-                            longitude=120.1551 + i * 0.01 + j * 0.005,
-                            latitude=30.2741 + i * 0.01 + j * 0.005,
-                        ),
-                        visit_duration=120, description=f"{request.city}的著名景点", category="景点",
-                    ) for j in range(2)
-                ],
-                meals=[
-                    Meal(type="breakfast", name=f"第{i+1}天早餐", description="当地特色早餐"),
-                    Meal(type="lunch", name=f"第{i+1}天午餐", description="午餐推荐"),
-                    Meal(type="dinner", name=f"第{i+1}天晚餐", description="晚餐推荐"),
-                ],
-            ))
-
-        return TripPlan(
-            city=request.city, start_date=request.start_date, end_date=request.end_date,
-            days=days, weather_info=[],
-            overall_suggestions=f"这是为您规划的{request.city}{request.travel_days}日游行程，建议提前查看各景点的开放时间。",
-        )
 
     # ========== 入口 ==========
 

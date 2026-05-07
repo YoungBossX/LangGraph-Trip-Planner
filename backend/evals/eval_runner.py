@@ -50,6 +50,16 @@ OUTDOOR_TERMS = (
     "森林公园", "湿地", "观景台", "露营", "漂流", "海滨", "沙滩", "海岛", "hiking",
 )
 
+# ---------- 数据真实性检测 ----------
+# 景点名虚假模式：{city}景点{N}、XX著名景点 等
+FAKE_NAME_PATTERNS = ("景点1", "景点2", "景点3", "著名景点", "热门景点", "推荐景点")
+# 地址虚假模式：只含城市名无街道、含"某区某路"
+FAKE_ADDRESS_PATTERNS = ("某区某路", "某路", "某街")
+# 描述虚假阈值：少于这个字符数视为无效描述
+MIN_DESCRIPTION_LENGTH = 10
+# 通用模板描述关键词（表明是编造而非真实数据）
+GENERIC_DESC_PATTERNS = ("著名景点", "历史悠久，值得一游", "这是", "另一个著名景点")
+
 
 @dataclass
 class CaseResult:
@@ -76,6 +86,14 @@ class CaseResult:
 
     # 耗时 (ms)
     total_ms: int = 0
+
+    # 数据真实性
+    auth_passed: bool = False
+    auth_violations: List[str] = field(default_factory=list)
+    fake_attraction_count: int = 0
+    fake_address_count: int = 0
+    coord_duplicate_count: int = 0
+    weather_date_mismatch: bool = False
 
 
 # ---------- 工具函数 ----------
@@ -183,6 +201,119 @@ def _evaluate_location_coverage(plan: Any) -> Dict[str, Any]:
     }
 
 
+def _evaluate_data_authenticity(plan: Any, request: Any) -> Dict[str, Any]:
+    """检测生成数据是否存在虚假/编造特征"""
+    violations: List[str] = []
+    fake_attr_count = 0
+    fake_addr_count = 0
+    coord_dup_count = 0
+    weather_mismatch = False
+
+    if plan is None:
+        return {
+            "auth_passed": False, "auth_violations": ["trip_plan is null"],
+            "fake_attraction_count": 0, "fake_address_count": 0,
+            "coord_duplicate_count": 0, "weather_date_mismatch": True,
+        }
+
+    # 收集所有景点坐标用于检测重复
+    all_coords: List[tuple] = []
+
+    for day in (getattr(plan, "days", []) or []):
+        day_label = f"第{getattr(day, 'day_index', '?')}天"
+
+        for attr in (getattr(day, "attractions", []) or []):
+            name = getattr(attr, "name", "") or ""
+            address = getattr(attr, "address", "") or ""
+            desc = getattr(attr, "description", "") or ""
+            loc = getattr(attr, "location", None)
+
+            # 1. 景点名真实性
+            for pat in FAKE_NAME_PATTERNS:
+                if pat in name:
+                    violations.append(f"{day_label} 景点名包含虚假模式 '{pat}': {name}")
+                    fake_attr_count += 1
+                    break
+
+            # 2. 地址真实性
+            if address and not any(pat in address for pat in FAKE_ADDRESS_PATTERNS):
+                # 检查是否只有城市名没有街道
+                if len(address.strip()) <= 5 or (
+                    request and address.strip() in (request.city, request.city + "市", "")
+                ):
+                    violations.append(f"{day_label} 地址过于简略: '{address}' ({name})")
+                    fake_addr_count += 1
+            elif address:
+                for pat in FAKE_ADDRESS_PATTERNS:
+                    if pat in address:
+                        violations.append(f"{day_label} 地址包含虚假模式 '{pat}': {address} ({name})")
+                        fake_addr_count += 1
+                        break
+
+            # 3. 描述质量
+            if desc and len(desc.strip()) < MIN_DESCRIPTION_LENGTH:
+                violations.append(f"{day_label} 描述过短({len(desc)}字): '{desc}' ({name})")
+            for pat in GENERIC_DESC_PATTERNS:
+                if pat in desc:
+                    violations.append(f"{day_label} 描述包含模板化表述 '{pat}': ({name})")
+                    break
+
+            # 4. 收集坐标
+            if loc is not None:
+                try:
+                    coord = (float(getattr(loc, "longitude", 0)), float(getattr(loc, "latitude", 0)))
+                    all_coords.append(coord)
+                except (TypeError, ValueError):
+                    pass
+
+    # 5. 坐标重复检测
+    if len(all_coords) >= 2:
+        unique_coords = set(all_coords)
+        if len(unique_coords) < len(all_coords):
+            coord_dup_count = len(all_coords) - len(unique_coords)
+            violations.append(f"坐标重复: {len(all_coords)}个点位中{coord_dup_count}个坐标重复")
+
+        # 检查是否与已知虚假坐标匹配 (北京天安门附近 116.39/39.91)
+        beijing_fake_count = sum(
+            1 for c in all_coords
+            if abs(c[0] - 116.397) < 0.01 and abs(c[1] - 39.917) < 0.01
+        )
+        if beijing_fake_count > 0 and request and request.city not in ("北京", "Beijing"):
+            violations.append(f"坐标指向北京 ({beijing_fake_count}个)，但与目的地 {request.city} 不符")
+
+    # 6. 天气日期是否与行程日期匹配
+    weather_dates = set()
+    for w in (getattr(plan, "weather_info", []) or []):
+        d = getattr(w, "date", "")
+        if d:
+            weather_dates.add(d)
+    if request and weather_dates:
+        try:
+            from datetime import datetime, timedelta
+            start = datetime.strptime(request.start_date, "%Y-%m-%d")
+            end = datetime.strptime(request.end_date, "%Y-%m-%d")
+            expected_dates = {
+                (start + timedelta(days=i)).strftime("%Y-%m-%d")
+                for i in range(request.travel_days)
+            }
+            if weather_dates != expected_dates:
+                weather_mismatch = True
+                violations.append(
+                    f"天气日期不匹配: 预期{expected_dates}, 实际{weather_dates}"
+                )
+        except Exception:
+            pass
+
+    return {
+        "auth_passed": len(violations) == 0,
+        "auth_violations": violations,
+        "fake_attraction_count": fake_attr_count,
+        "fake_address_count": fake_addr_count,
+        "coord_duplicate_count": coord_dup_count,
+        "weather_date_mismatch": weather_mismatch,
+    }
+
+
 def _safe_mean(values: List[int]) -> Optional[float]:
     return round(float(mean(values)), 2) if values else None
 
@@ -260,6 +391,13 @@ def run_eval(cases: List[Dict], reset_each: bool = False) -> List[CaseResult]:
         # 坐标覆盖
         loc_info = _evaluate_location_coverage(plan) if plan else {}
 
+        # 数据真实性
+        auth_info = _evaluate_data_authenticity(plan, request) if plan else {
+            "auth_passed": False, "auth_violations": ["无数据"],
+            "fake_attraction_count": 0, "fake_address_count": 0,
+            "coord_duplicate_count": 0, "weather_date_mismatch": True,
+        }
+
         result = CaseResult(
             case_id=case_id, city=city, travel_days=travel_days,
             status=status, error=error_msg,
@@ -274,12 +412,19 @@ def run_eval(cases: List[Dict], reset_each: bool = False) -> List[CaseResult]:
             hotels_with_location=loc_info.get("hotels_with_location", 0),
             location_coverage=loc_info.get("location_coverage", 0.0),
             total_ms=elapsed_ms,
+            auth_passed=auth_info["auth_passed"],
+            auth_violations=auth_info["auth_violations"],
+            fake_attraction_count=auth_info["fake_attraction_count"],
+            fake_address_count=auth_info["fake_address_count"],
+            coord_duplicate_count=auth_info["coord_duplicate_count"],
+            weather_date_mismatch=auth_info["weather_date_mismatch"],
         )
         results.append(result)
 
-        status_icon = "✅" if result.constraint_passed else ("❌" if status != "success" else "⚠️")
+        status_icon = "✅" if result.constraint_passed and result.auth_passed else ("❌" if status != "success" else "⚠️")
         print(f"{status_icon} {elapsed_ms}ms, 景点{result.total_attractions}个, "
-              f"坐标{_fmt_pct(result.location_coverage)}, 违规{len(violations)}条")
+              f"坐标{_fmt_pct(result.location_coverage)}, "
+              f"约束{len(violations)}条 真实{len(result.auth_violations)}条")
 
     return results
 
@@ -296,6 +441,13 @@ def _build_summary(results: List[CaseResult]) -> Dict[str, Any]:
     total_entities = sum(r.total_attractions + r.total_hotels for r in results)
     entities_with_loc = sum(r.attractions_with_location + r.hotels_with_location for r in results)
 
+    # 数据真实性
+    auth_passed = sum(1 for r in results if r.auth_passed)
+    fake_attr_total = sum(r.fake_attraction_count for r in results)
+    fake_addr_total = sum(r.fake_address_count for r in results)
+    coord_dup_total = sum(r.coord_duplicate_count for r in results)
+    weather_mismatch_total = sum(1 for r in results if r.weather_date_mismatch)
+
     latencies = [r.total_ms for r in results if r.status == "success"]
 
     return {
@@ -304,14 +456,20 @@ def _build_summary(results: List[CaseResult]) -> Dict[str, Any]:
         "failed_cases": failed,
         "constraint_passed_cases": constraint_passed,
         "days_matched_cases": days_matched,
+        "auth_passed_cases": auth_passed,
         "success_rate": _safe_pct(success, total),
         "failure_rate": _safe_pct(failed, total),
         "constraint_satisfaction_rate": _safe_pct(constraint_passed, total),
         "days_match_rate": _safe_pct(days_matched, total),
         "location_coverage_rate": _safe_pct(entities_with_loc, total_entities),
+        "data_authenticity_rate": _safe_pct(auth_passed, total),
         "avg_latency_ms": _safe_mean(latencies),
         "min_latency_ms": min(latencies) if latencies else None,
         "max_latency_ms": max(latencies) if latencies else None,
+        "fake_attraction_total": fake_attr_total,
+        "fake_address_total": fake_addr_total,
+        "coord_duplicate_total": coord_dup_total,
+        "weather_date_mismatch_total": weather_mismatch_total,
     }
 
 
@@ -322,11 +480,17 @@ def _summary_cn(s: Dict[str, Any]) -> Dict[str, Any]:
         "失败数": s["failed_cases"],
         "约束通过数": s["constraint_passed_cases"],
         "天数一致数": s["days_matched_cases"],
+        "数据真实通过数": s["auth_passed_cases"],
         "成功率": _fmt_pct(s["success_rate"]),
         "失败率": _fmt_pct(s["failure_rate"]),
         "约束满足率": _fmt_pct(s["constraint_satisfaction_rate"]),
         "天数一致率": _fmt_pct(s["days_match_rate"]),
         "坐标覆盖率": _fmt_pct(s["location_coverage_rate"]),
+        "数据真实率": _fmt_pct(s["data_authenticity_rate"]),
+        "虚假景点数": s["fake_attraction_total"],
+        "虚假地址数": s["fake_address_total"],
+        "坐标重复数": s["coord_duplicate_total"],
+        "天气日期不匹配": s["weather_date_mismatch_total"],
         "平均耗时(ms)": s["avg_latency_ms"],
         "最短耗时(ms)": s["min_latency_ms"],
         "最长耗时(ms)": s["max_latency_ms"],
@@ -347,9 +511,18 @@ def _make_markdown(report: Dict[str, Any]) -> str:
         f"| 约束满足率 | {_fmt_pct(s['constraint_satisfaction_rate'])} |",
         f"| 天数一致率 | {_fmt_pct(s['days_match_rate'])} |",
         f"| 坐标覆盖率 | {_fmt_pct(s['location_coverage_rate'])} |",
+        f"| 数据真实率 | {_fmt_pct(s['data_authenticity_rate'])} |",
         f"| 平均耗时 | {s['avg_latency_ms']}ms |",
         f"| 最短耗时 | {s['min_latency_ms']}ms |",
         f"| 最长耗时 | {s['max_latency_ms']}ms |",
+        "",
+        "## 数据质量", "",
+        f"| 指标 | 值 |",
+        f"|------|---:|",
+        f"| 虚假景点名 | {s['fake_attraction_total']} |",
+        f"| 虚假地址 | {s['fake_address_total']} |",
+        f"| 坐标重复 | {s['coord_duplicate_total']} |",
+        f"| 天气日期不匹配 | {s['weather_date_mismatch_total']} |",
         "",
     ]
 
@@ -363,15 +536,16 @@ def _make_markdown(report: Dict[str, Any]) -> str:
     # 用例详情
     lines += [
         "## 用例详情", "",
-        "| case_id | 城市 | 天数 | 状态 | 约束 | 坐标率 | 耗时(ms) | 违规 |",
-        "|---------|------|---:|------|------|-------:|--------:|------|",
+        "| case_id | 城市 | 天数 | 状态 | 约束 | 真实 | 坐标率 | 耗时(ms) | 违规 |",
+        "|---------|------|---:|------|------|------|-------:|--------:|------|",
     ]
     for r in report["results"]:
         status_cn = {"success": "✅", "runtime_error": "❌", "input_error": "⚠️"}.get(r["status"], r["status"])
         violations = "; ".join(r["violations"][:2]) or "-"
+        auth_str = "✅" if r.get("auth_passed", False) else "❌"
         lines.append(
             f"| {r['case_id']} | {r['city']} | {r['travel_days']} | {status_cn} | "
-            f"{'✅' if r['constraint_passed'] else '❌'} | "
+            f"{'✅' if r['constraint_passed'] else '❌'} | {auth_str} | "
             f"{_fmt_pct(r['location_coverage'])} | {r['total_ms']} | {violations} |"
         )
     lines.append("")
@@ -398,7 +572,7 @@ def _compare_baseline(current: Dict, baseline_path: Path) -> Dict[str, str]:
     keys = {
         "success_rate": "成功率", "constraint_satisfaction_rate": "约束满足率",
         "days_match_rate": "天数一致率", "location_coverage_rate": "坐标覆盖率",
-        "avg_latency_ms": "平均耗时(ms)",
+        "data_authenticity_rate": "数据真实率", "avg_latency_ms": "平均耗时(ms)",
     }
     for key, label in keys.items():
         cur, old = current.get(key), bs.get(key)
@@ -428,6 +602,8 @@ def main() -> int:
     parser.add_argument("--min-success-rate", type=float, default=0.90)
     parser.add_argument("--min-constraint-rate", type=float, default=0.80)
     parser.add_argument("--min-location-rate", type=float, default=0.70)
+    parser.add_argument("--min-authenticity-rate", type=float, default=0.80,
+                        help="数据真实率下限（景点名/地址/坐标/天气日期均为真实数据）")
     parser.add_argument("--max-avg-latency-ms", type=float, default=120000)
 
     args = parser.parse_args()
@@ -470,6 +646,8 @@ def main() -> int:
         gate_reasons.append(f"约束满足率 {_fmt_pct(summary['constraint_satisfaction_rate'])} < {_fmt_pct(args.min_constraint_rate)}")
     if summary["location_coverage_rate"] < args.min_location_rate:
         gate_reasons.append(f"坐标覆盖率 {_fmt_pct(summary['location_coverage_rate'])} < {_fmt_pct(args.min_location_rate)}")
+    if summary["data_authenticity_rate"] < args.min_authenticity_rate:
+        gate_reasons.append(f"数据真实率 {_fmt_pct(summary['data_authenticity_rate'])} < {_fmt_pct(args.min_authenticity_rate)}")
     if args.max_avg_latency_ms > 0 and summary["avg_latency_ms"] is not None:
         if summary["avg_latency_ms"] > args.max_avg_latency_ms:
             gate_reasons.append(f"平均耗时 {summary['avg_latency_ms']}ms > {args.max_avg_latency_ms}ms")
