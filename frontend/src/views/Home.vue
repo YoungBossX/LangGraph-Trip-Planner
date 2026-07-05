@@ -12,10 +12,10 @@
 
     <section class="home-workspace">
       <aside class="intro-panel">
-        <p class="eyebrow">MULTI-AGENT PLANNING</p>
-        <h1>让行程先变得清楚</h1>
+        <p class="eyebrow">TRIP PLANNING WORKSPACE</p>
+        <h1>让行程一目了然</h1>
         <p class="intro-copy">
-          输入目的地、日期和偏好。多 Agent 工作流会结合景点、天气、住宿与路线信息，整理成可审阅的旅行计划。
+          输入目的地、日期和偏好。系统会通过多 Agent 工作流结合景点、天气、住宿与路线信息，整理成可审阅的旅行计划。
         </p>
         <div class="trust-grid">
           <div class="trust-item">
@@ -318,8 +318,8 @@ const handleSubmit = async () => {
 }
 
 .home-nav {
-  max-width: 1180px;
-  margin: 0 auto 44px;
+  max-width: 1220px;
+  margin: 0 auto 36px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -340,11 +340,11 @@ const handleSubmit = async () => {
 }
 
 .home-workspace {
-  max-width: 1180px;
+  max-width: 1220px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.18fr);
-  gap: clamp(24px, 4vw, 56px);
+  grid-template-columns: minmax(360px, 0.95fr) minmax(560px, 1.05fr);
+  gap: clamp(28px, 4vw, 64px);
   align-items: start;
 }
 
@@ -362,15 +362,16 @@ const handleSubmit = async () => {
 
 .intro-panel h1 {
   margin: 0;
-  max-width: 460px;
-  font-size: clamp(36px, 5vw, 64px);
-  line-height: 1.04;
+  max-width: 560px;
+  font-size: clamp(36px, 4vw, 56px);
+  line-height: 1.08;
   font-weight: 850;
   letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .intro-copy {
-  max-width: 520px;
+  max-width: 560px;
   margin: 20px 0 26px;
   color: #66736f;
   font-size: 16px;
@@ -378,6 +379,7 @@ const handleSubmit = async () => {
 }
 
 .trust-grid {
+  max-width: 560px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
