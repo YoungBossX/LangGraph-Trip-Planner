@@ -117,3 +117,6 @@ backend/evals/reports/
 # Local worktrees
 .worktrees/
 worktrees/
+
+# Superpowers brainstorming artifacts
+.superpowers/
