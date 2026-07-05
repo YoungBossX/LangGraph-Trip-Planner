@@ -60,6 +60,8 @@ datasets/
 # Pycache
 __pycache__/
 .pytest_cache/
+.uv-cache/
+.uv-tools/
 .venv/
 venv/
 

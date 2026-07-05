@@ -27,6 +27,7 @@ NODE_HOTELS = "find_hotels"
 NODE_CONTEXT = "context_ready"
 NODE_PLAN = "plan_itinerary"
 NODE_ERROR = "handle_error"
+MAX_NODE_RETRIES = 2
 
 _RETRY_ROUTES = {
     NODE_ATTRACTIONS: NODE_ATTRACTIONS,
@@ -137,7 +138,10 @@ class TripPlannerWorkflow:
         retry_count = state.get("retry_count", 0)
         failed_node = state.get("failed_node", "")
 
-        if retry_count < 2 and failed_node and failed_node in _RETRY_ROUTES:
+        if state.get("error"):
+            return "end"
+
+        if retry_count <= MAX_NODE_RETRIES and failed_node and failed_node in _RETRY_ROUTES:
             return f"retry_{failed_node}"
 
         if state.get("attractions") or state.get("weather_info"):
@@ -342,7 +346,7 @@ class TripPlannerWorkflow:
 
         logger.warning(f"⚠️ 节点 [{failed_node}] 失败: {error_msg}, 已重试 {retry_count} 次")
 
-        if retry_count < 2:
+        if retry_count < MAX_NODE_RETRIES:
             return {
                 "error": None,
                 "retry_count": retry_count + 1,
@@ -894,6 +898,11 @@ class TripPlannerWorkflow:
 
         if final_state.get("error") and not final_state.get("trip_plan"):
             error_msg = final_state.get("error", "未知错误")
+            logger.error(f"❌ 旅行规划失败: {error_msg}")
+            raise Exception(error_msg)
+
+        if not final_state.get("trip_plan"):
+            error_msg = final_state.get("error") or "工作流未能生成结果"
             logger.error(f"❌ 旅行规划失败: {error_msg}")
             raise Exception(error_msg)
 

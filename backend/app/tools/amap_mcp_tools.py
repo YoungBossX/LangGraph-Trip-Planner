@@ -2,7 +2,10 @@
 
 import asyncio
 import logging
+import os
+import sys
 from contextlib import suppress
+from pathlib import Path
 from typing import List, Optional
 
 import nest_asyncio
@@ -19,6 +22,30 @@ from ..config import get_settings
 
 # 设置日志记录
 logger = logging.getLogger(__name__)
+
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+_DEFAULT_UV_CACHE_DIR = _BACKEND_DIR / ".uv-cache"
+_DEFAULT_UV_TOOL_DIR = _BACKEND_DIR / ".uv-tools"
+
+
+def _build_amap_mcp_connection() -> dict:
+    """Build the stdio connection used to launch the AMap MCP server."""
+    settings = get_settings()
+    uv_cache_dir = os.environ.get("UV_CACHE_DIR") or str(_DEFAULT_UV_CACHE_DIR)
+    uv_tool_dir = os.environ.get("UV_TOOL_DIR") or str(_DEFAULT_UV_TOOL_DIR)
+
+    return {
+        "command": "uvx",
+        "args": ["--python", sys.executable, "amap-mcp-server"],
+        "transport": "stdio",
+        "env": {
+            "AMAP_MAPS_API_KEY": settings.amap_api_key,
+            "UV_CACHE_DIR": uv_cache_dir,
+            "UV_TOOL_DIR": uv_tool_dir,
+            "UV_PYTHON_DOWNLOADS": "never",
+        },
+    }
+
 
 def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
     """包装异步工具以支持同步调用
@@ -109,12 +136,7 @@ async def create_amap_mcp_tools() -> List[BaseTool]:
     try:
 
         # 创建连接配置
-        connection = {
-            "command": "uvx",
-            "args": ["amap-mcp-server"],
-            "transport": "stdio",
-            "env": {"AMAP_MAPS_API_KEY": settings.amap_api_key}
-        }
+        connection = _build_amap_mcp_connection()
 
         logger.info("正在连接高德地图MCP服务器...")
 
@@ -178,12 +200,7 @@ def get_amap_essential_tools() -> List[BaseTool]:
     try:
         # 使用异步函数加载工具，然后过滤出主要工具
         async def load_and_filter():
-            connection = {
-                "command": "uvx",
-                "args": ["amap-mcp-server"],
-                "transport": "stdio",
-                "env": {"AMAP_MAPS_API_KEY": settings.amap_api_key}
-            }
+            connection = _build_amap_mcp_connection()
 
             tools = await load_mcp_tools(
                 session=None,

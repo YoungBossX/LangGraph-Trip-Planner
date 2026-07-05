@@ -1,5 +1,4 @@
 """配置管理模块"""
-import os
 from pathlib import Path
 from typing import List
 
@@ -30,6 +29,8 @@ class Settings(BaseSettings):
     # LLM配置
     llm_api_key: str = ""
     llm_base_url: str = ""
+    llm_model_id: str = ""
+    # 兼容旧的 LLM_MODEL 命名，优先使用 LLM_MODEL_ID。
     llm_model: str = ""
 
     # LangChain 配置
@@ -72,10 +73,12 @@ def validate_config():
     if not settings.amap_api_key:
         errors.append("AMAP_API_KEY未配置")
 
-    # LangChain 使用标准 OpenAI 环境变量
-    openai_api_key = os.getenv("LLM_API_KEY")
-    if not openai_api_key:
-        errors.append("OPENAI_API_KEY 未配置（LangChain 必需）")
+    if not settings.llm_api_key:
+        errors.append("LLM_API_KEY未配置")
+    if not settings.llm_base_url:
+        errors.append("LLM_BASE_URL未配置")
+    if not (settings.llm_model_id or settings.llm_model):
+        errors.append("LLM_MODEL_ID未配置")
 
     # LangChain 配置检查
     if settings.langchain_tracing and not settings.langchain_api_key:
@@ -101,14 +104,9 @@ def print_config():
     print(f"服务器: {settings.host}:{settings.port}")
     print(f"高德地图API Key: {'已配置' if settings.amap_api_key else '未配置'}")
 
-    # 检查LLM配置
-    openai_api_key = os.getenv("LLM_API_KEY")
-    openai_base_url = os.getenv("LLM_BASE_URL")
-    openai_model = os.getenv("LLM_MODEL_ID")
-
-    print(f"LLM API Key: {'已配置' if openai_api_key else '未配置'}")
-    print(f"LLM Base URL: {openai_base_url}")
-    print(f"LLM Model: {openai_model}")
+    print(f"LLM API Key: {'已配置' if settings.llm_api_key else '未配置'}")
+    print(f"LLM Base URL: {settings.llm_base_url}")
+    print(f"LLM Model: {settings.llm_model_id or settings.llm_model}")
     print(f"LangChain 追踪: {'启用' if settings.langchain_tracing else '禁用'}")
     print(f"智能体最大迭代次数: {settings.agent_max_iterations}")
     print(f"智能体温度: {settings.agent_temperature}")

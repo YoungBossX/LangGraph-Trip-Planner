@@ -1,4 +1,3 @@
-import os
 from typing import Optional
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -14,16 +13,17 @@ def get_llm() -> BaseChatModel:
     global _llm_instance
 
     if _llm_instance is None:
-        # 从环境变量读取配置
-        api_key = os.getenv("LLM_API_KEY")
-        base_url = os.getenv("LLM_BASE_URL")
-        model = os.getenv("LLM_MODEL_ID")
+        api_key = settings.llm_api_key
+        base_url = settings.llm_base_url
+        model = settings.llm_model_id or settings.llm_model
 
-        # 验证必要的配置
         if not api_key:
-            raise ValueError("OPENAI_API_KEY 未配置（LangChain 必需）")
+            raise ValueError("LLM_API_KEY未配置")
+        if not base_url:
+            raise ValueError("LLM_BASE_URL未配置")
+        if not model:
+            raise ValueError("LLM_MODEL_ID未配置")
 
-        # 创建 ChatOpenAI 实例
         _llm_instance = ChatOpenAI(
             api_key=api_key,
             base_url=base_url,

@@ -129,6 +129,17 @@ def test_skip_to_plan_clears_failed_node_after_retry_budget(workflow_and_agents)
     assert result["failed_node"] is None
 
 
+def test_plan_trip_raises_after_retry_budget_without_partial_data(workflow_and_agents):
+    workflow, agents = workflow_and_agents
+
+    agents["attraction_search"].invoke.side_effect = RuntimeError("LLM unavailable")
+
+    with pytest.raises(Exception, match="景点搜索失败"):
+        workflow.plan_trip(_trip_request())
+
+    assert agents["attraction_search"].invoke.call_count == 3
+
+
 def test_weather_and_hotels_are_parallel_branches_after_attractions(workflow_and_agents):
     workflow, _ = workflow_and_agents
     from app.workflows.trip_planner_graph import NODE_ATTRACTIONS, NODE_CONTEXT, NODE_HOTELS, NODE_PLAN, NODE_WEATHER
