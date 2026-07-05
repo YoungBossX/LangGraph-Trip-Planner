@@ -1,28 +1,35 @@
 <template>
-  <div id="app">
-    <a-layout style="min-height: 100vh">
-      <a-layout-header style="background: #001529; padding: 0 50px">
-        <div style="color: white; font-size: 24px; font-weight: bold">
-          🌍 多Agent智能旅行助手
-        </div>
-      </a-layout-header>
-      <a-layout-content style="padding: 24px">
-        <router-view />
-      </a-layout-content>
-      <a-layout-footer style="text-align: center">
-        多Agent智能旅行助手 ©2026
-      </a-layout-footer>
-    </a-layout>
-  </div>
+  <router-view />
 </template>
 
 <script setup lang="ts">
 </script>
 
 <style>
+:root {
+  color: #1f2a28;
+  background: #f6f8f7;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f6f8f7;
+}
+
 #app {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Noto Sans', sans-serif;
+  min-height: 100vh;
 }
 </style>
-
