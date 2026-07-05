@@ -315,6 +315,7 @@ import { DownOutlined } from '@ant-design/icons-vue'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import { getAttractionPhoto } from '@/services/api'
 import type { TripPlan } from '@/types'
 
 const router = useRouter()
@@ -432,11 +433,10 @@ const loadAttractionPhotos = async () => {
 
   tripPlan.value.days.forEach(day => {
     day.attractions.forEach(attraction => {
-      const promise = fetch(`http://localhost:8000/api/poi/photo?name=${encodeURIComponent(attraction.name)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.data.photo_url) {
-            attractionPhotos.value[attraction.name] = data.data.photo_url
+      const promise = getAttractionPhoto(attraction.name)
+        .then(photoUrl => {
+          if (photoUrl) {
+            attractionPhotos.value[attraction.name] = photoUrl
           }
         })
         .catch(err => {
@@ -608,8 +608,14 @@ const exportAsPDF = async () => {
 // 初始化地图
 const initMap = async () => {
   try {
+    const amapKey = import.meta.env.VITE_AMAP_WEB_JS_KEY
+    if (!amapKey) {
+      message.error('地图加载失败: 未配置高德 JS API Key')
+      return
+    }
+
     const AMap = await AMapLoader.load({
-      key: import.meta.env.VITE_AMAP_WEB_JS_KEY, // 高德地图Web端(JS API) Key
+      key: amapKey, // 高德地图Web端(JS API) Key
       version: '2.0',
       plugins: ['AMap.Marker', 'AMap.Polyline', 'AMap.InfoWindow']
     })

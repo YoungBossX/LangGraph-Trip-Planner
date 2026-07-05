@@ -51,10 +51,6 @@ logs
 node_modules
 dist-ssr
 
-# Lock Files
-package-lock.json
-yarn.lock
-
 # Local Environment Files
 *.local
 
@@ -63,6 +59,9 @@ datasets/
 
 # Pycache
 __pycache__/
+.pytest_cache/
+.venv/
+venv/
 
 # Model Files
 weights/
@@ -82,29 +81,12 @@ checkpoints_2
 *.log
 **/*.log
 
-# *.png
-*.png
-**/*.png
-
 # 预训练模型
 clap-htsat-unfused
 
 # csv文件
 *.csv
 **/*.csv
-
-# md文件
-*.md
-**/*.md
-!CLAUDE.md
-
-# pdf文件
-*.pdf
-**/*.pdf
-
-# svg文件
-*.svg
-**/*.svg
 
 # .env文件
 .env
@@ -129,10 +111,9 @@ md5.text
 # prompts 文件夹
 prompts/
 
-# josn 文件
-*.json
-**/*.json
+# Generated reports
+backend/evals/reports/
 
-# jsonl 文件
-*.jsonl
-**/*.jsonl
+# Local worktrees
+.worktrees/
+worktrees/

@@ -1,7 +1,9 @@
 import os
 from typing import Optional
-from langchain_openai import ChatOpenAI
+
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_openai import ChatOpenAI
+
 from ..config import settings
 
 # 全局 LLM 实例
@@ -32,7 +34,7 @@ def get_llm() -> BaseChatModel:
             max_retries=settings.agent_max_iterations
         )
 
-        print(f"[SUCCESS] LangChain LLM 初始化成功")
+        print("[SUCCESS] LangChain LLM 初始化成功")
         print(f"   模型: {model}")
         print(f"   Base URL: {base_url}")
 

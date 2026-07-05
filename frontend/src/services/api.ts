@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type { TripFormData, TripPlanResponse } from '@/types'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/+$/, '')
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -60,29 +60,55 @@ export async function generateTripPlanStream(
   const decoder = new TextDecoder()
   let buffer = ''
 
+  const processFrame = (frame: string): TripPlanResponse | null => {
+    let eventType = 'message'
+    const dataLines: string[] = []
+
+    for (const rawLine of frame.split(/\r?\n/)) {
+      const line = rawLine.trimEnd()
+      if (!line || line.startsWith(':')) continue
+      if (line.startsWith('event:')) {
+        eventType = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart())
+      }
+    }
+
+    if (dataLines.length === 0) return null
+
+    const data = JSON.parse(dataLines.join('\n'))
+    if (eventType === 'progress') {
+      onProgress(data.step, data.message)
+      return null
+    }
+    if (eventType === 'result') {
+      return data as TripPlanResponse
+    }
+    if (eventType === 'error') {
+      throw new Error(data.message || '生成失败')
+    }
+
+    return null
+  }
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
 
     buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
+    const frames = buffer.split(/\r?\n\r?\n/)
+    buffer = frames.pop() || ''
 
-    let eventType = ''
-    for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        eventType = line.slice(7).trim()
-      } else if (line.startsWith('data: ')) {
-        const data = JSON.parse(line.slice(6))
-        if (eventType === 'progress') {
-          onProgress(data.step, data.message)
-        } else if (eventType === 'result') {
-          return data as TripPlanResponse
-        } else if (eventType === 'error') {
-          throw new Error(data.message || '生成失败')
-        }
-      }
+    for (const frame of frames) {
+      const result = processFrame(frame)
+      if (result) return result
     }
+  }
+
+  buffer += decoder.decode()
+  if (buffer.trim()) {
+    const result = processFrame(buffer)
+    if (result) return result
   }
 
   throw new Error('流式响应未返回结果')
@@ -114,5 +140,16 @@ export async function healthCheck(): Promise<any> {
   }
 }
 
-export default apiClient
+export async function getAttractionPhoto(name: string): Promise<string | null> {
+  try {
+    const response = await apiClient.get('/api/poi/photo', {
+      params: { name }
+    })
+    return response.data?.data?.photo_url || null
+  } catch (error: any) {
+    console.error('获取景点图片失败:', error)
+    return null
+  }
+}
 
+export default apiClient

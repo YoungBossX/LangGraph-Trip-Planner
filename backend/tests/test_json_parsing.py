@@ -2,6 +2,7 @@
 
 import json
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 # Mock 掉 MCP 工具和 LLM，创建一个可测试的 TripPlannerWorkflow 实例
@@ -14,10 +15,12 @@ _mock_agent = MagicMock()
 @pytest.fixture(scope="module")
 def workflow():
     """创建 TripPlannerWorkflow 实例（mock 掉构造函数中的外部依赖）"""
-    with patch("app.workflows.trip_planner_graph.get_cached_amap_tools", return_value=[_mock_tool]):
-        with patch("app.workflows.trip_planner_graph.get_agent", return_value=_mock_agent):
-            from app.workflows.trip_planner_graph import TripPlannerWorkflow
-            return TripPlannerWorkflow()
+    with (
+        patch("app.workflows.trip_planner_graph.get_cached_amap_tools", return_value=[_mock_tool]),
+        patch("app.workflows.trip_planner_graph.get_agent", return_value=_mock_agent),
+    ):
+        from app.workflows.trip_planner_graph import TripPlannerWorkflow
+        return TripPlannerWorkflow()
 
 
 class TestExtractJson:
@@ -52,7 +55,10 @@ class TestTruncatedJsonRepair:
 
     def test_repair_truncated_array(self, workflow):
         # 模拟被截断的 JSON 数组（最后一个对象不完整）
-        truncated = '[{"name":"景点1","address":"地址1","location":{"longitude":120.0,"latitude":30.0}},{"name":"景点2","addr'
+        truncated = (
+            '[{"name":"景点1","address":"地址1","location":{"longitude":120.0,"latitude":30.0}},'
+            '{"name":"景点2","addr'
+        )
         result = workflow._extract_json(truncated)
         parsed = json.loads(result)
         assert len(parsed) == 1

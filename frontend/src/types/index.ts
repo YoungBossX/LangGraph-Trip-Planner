@@ -8,20 +8,23 @@ export interface Location {
 export interface Attraction {
   name: string
   address: string
-  location: Location
+  location?: Location | null
   visit_duration: number
   description: string
   category?: string
-  rating?: number
+  rating?: number | null
+  photos?: string[]
+  poi_id?: string | null
   image_url?: string
   ticket_price?: number
+  price_text?: string
 }
 
 export interface Meal {
   type: 'breakfast' | 'lunch' | 'dinner' | 'snack'
   name: string
   address?: string
-  location?: Location
+  location?: Location | null
   description?: string
   estimated_cost?: number
 }
@@ -29,9 +32,9 @@ export interface Meal {
 export interface Hotel {
   name: string
   address: string
-  location?: Location
+  location?: Location | null
   price_range: string
-  rating: string
+  rating?: number | null
   distance: string
   type: string
   estimated_cost?: number
@@ -51,7 +54,7 @@ export interface DayPlan {
   description: string
   transportation: string
   accommodation: string
-  hotel?: Hotel
+  hotel?: Hotel | null
   attractions: Attraction[]
   meals: Meal[]
 }
@@ -73,7 +76,7 @@ export interface TripPlan {
   days: DayPlan[]
   weather_info: WeatherInfo[]
   overall_suggestions: string
-  budget?: Budget
+  budget?: Budget | null
 }
 
 export interface TripFormData {
@@ -90,6 +93,5 @@ export interface TripFormData {
 export interface TripPlanResponse {
   success: boolean
   message: string
-  data?: TripPlan
+  data?: TripPlan | null
 }
-

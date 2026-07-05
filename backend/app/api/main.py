@@ -1,11 +1,14 @@
 """FastAPI主应用"""
 
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
-from ..config import get_settings, validate_config, print_config
-from .routes import trip, poi
 import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from ..config import get_settings, print_config, validate_config
+from .routes import poi, trip
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 settings = get_settings()
 

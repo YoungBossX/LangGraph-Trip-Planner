@@ -6,9 +6,12 @@
 
 """Unsplash图片服务"""
 
-import requests
 from typing import List, Optional
+
+import requests
+
 from ..config import get_settings
+
 
 class UnsplashService:
     """Unsplash图片服务类"""

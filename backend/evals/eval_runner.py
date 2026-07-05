@@ -18,12 +18,13 @@
 
 from __future__ import annotations
 
-import os
 import argparse
 import json
+import math
+import os
 import sys
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from statistics import mean
@@ -34,14 +35,15 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
+
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 if not os.environ.get("AMAP_MAPS_API_KEY") and os.environ.get("AMAP_API_KEY"):
     os.environ["AMAP_MAPS_API_KEY"] = os.environ["AMAP_API_KEY"]
 
-from app.models.schemas import TripRequest
-from app.workflows.trip_planner_graph import get_trip_planner_workflow, reset_workflow
+from app.models.schemas import TripRequest  # noqa: E402
+from app.workflows.trip_planner_graph import get_trip_planner_workflow, reset_workflow  # noqa: E402
 
 # ---------- 雨天/户外判定词 ----------
 RAIN_TERMS = ("雨", "雷阵雨", "暴雨", "雨夹雪", "雪", "storm", "shower", "rain")
@@ -161,11 +163,13 @@ def _evaluate_constraints(plan: Any, constraints: Dict[str, Any]) -> List[str]:
 
         # 3. 雨天户外
         weather = weather_by_date.get(day_date)
-        if avoid_rain and weather:
-            if _is_rainy(getattr(weather, "day_weather", ""), getattr(weather, "night_weather", "")):
-                bad = [getattr(a, "name", "") for a in attractions if _is_outdoor(a)]
-                if bad:
-                    violations.append(f"{label} 雨天安排了户外: {', '.join(bad[:2])}")
+        is_rainy_day = bool(
+            weather and _is_rainy(getattr(weather, "day_weather", ""), getattr(weather, "night_weather", ""))
+        )
+        if avoid_rain and is_rainy_day:
+            bad = [getattr(a, "name", "") for a in attractions if _is_outdoor(a)]
+            if bad:
+                violations.append(f"{label} 雨天安排了户外: {', '.join(bad[:2])}")
 
     return violations
 
@@ -291,7 +295,6 @@ def _evaluate_data_authenticity(plan: Any, request: Any) -> Dict[str, Any]:
         try:
             from datetime import datetime, timedelta
             start = datetime.strptime(request.start_date, "%Y-%m-%d")
-            end = datetime.strptime(request.end_date, "%Y-%m-%d")
             expected_dates = {
                 (start + timedelta(days=i)).strftime("%Y-%m-%d")
                 for i in range(request.travel_days)
@@ -421,7 +424,9 @@ def run_eval(cases: List[Dict], reset_each: bool = False) -> List[CaseResult]:
         )
         results.append(result)
 
-        status_icon = "✅" if result.constraint_passed and result.auth_passed else ("❌" if status != "success" else "⚠️")
+        status_icon = (
+            "✅" if result.constraint_passed and result.auth_passed else ("❌" if status != "success" else "⚠️")
+        )
         print(f"{status_icon} {elapsed_ms}ms, 景点{result.total_attractions}个, "
               f"坐标{_fmt_pct(result.location_coverage)}, "
               f"约束{len(violations)}条 真实{len(result.auth_violations)}条")
@@ -473,6 +478,75 @@ def _build_summary(results: List[CaseResult]) -> Dict[str, Any]:
     }
 
 
+def _percentile_nearest(values: List[int], percentile: float) -> Optional[int]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = math.ceil((percentile / 100.0) * len(ordered))
+    index = min(max(rank - 1, 0), len(ordered) - 1)
+    return ordered[index]
+
+
+def _seconds(ms: Optional[float]) -> Optional[float]:
+    return round(ms / 1000.0, 2) if ms is not None else None
+
+
+def _build_evaluation_info(
+    summary: Dict[str, Any],
+    results: List[CaseResult],
+    gate: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """生成面向人和机器的评估结论摘要。"""
+    latencies = [r.total_ms for r in results if r.status == "success"]
+    avg_latency_ms = summary.get("avg_latency_ms")
+    p95_latency_ms = _percentile_nearest(latencies, 95)
+
+    recommendations: List[str] = []
+    if summary["success_rate"] < 0.90:
+        recommendations.append("提高成功率")
+    if summary["constraint_satisfaction_rate"] < 0.80:
+        recommendations.append("加强行程约束满足")
+    if summary["location_coverage_rate"] < 0.70:
+        recommendations.append("提升坐标覆盖率")
+    if summary["data_authenticity_rate"] < 0.80:
+        recommendations.append("降低虚假或占位数据")
+    if avg_latency_ms is not None and avg_latency_ms > 120000:
+        recommendations.append("降低平均耗时")
+    if not recommendations:
+        recommendations.append("维持当前指标并扩大评测用例")
+
+    gate_passed = gate.get("passed") if gate else None
+    default_passed = (
+        summary["success_rate"] >= 0.90
+        and summary["constraint_satisfaction_rate"] >= 0.80
+        and summary["location_coverage_rate"] >= 0.70
+        and summary["data_authenticity_rate"] >= 0.80
+        and (avg_latency_ms is None or avg_latency_ms <= 120000)
+    )
+    verdict = "pass" if (gate_passed if gate_passed is not None else default_passed) else "needs_attention"
+
+    return {
+        "verdict": verdict,
+        "quality": {
+            "success_rate": summary["success_rate"],
+            "constraint_satisfaction_rate": summary["constraint_satisfaction_rate"],
+            "days_match_rate": summary["days_match_rate"],
+            "location_coverage_rate": summary["location_coverage_rate"],
+            "data_authenticity_rate": summary["data_authenticity_rate"],
+        },
+        "latency": {
+            "successful_cases": len(latencies),
+            "avg_ms": avg_latency_ms,
+            "avg_seconds": _seconds(avg_latency_ms),
+            "min_ms": summary.get("min_latency_ms"),
+            "max_ms": summary.get("max_latency_ms"),
+            "p95_ms": p95_latency_ms,
+            "p95_seconds": _seconds(p95_latency_ms),
+        },
+        "recommendations": recommendations,
+    }
+
+
 def _summary_cn(s: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "总用例数": s["total_cases"],
@@ -499,14 +573,22 @@ def _summary_cn(s: Dict[str, Any]) -> Dict[str, Any]:
 
 def _make_markdown(report: Dict[str, Any]) -> str:
     s = report["summary"]
+    info = report.get("evaluation_info", {})
+    latency = info.get("latency", {})
     lines = [
         "# 评测报告", "",
         f"- 生成时间: {report['generated_at']}",
         f"- 用例路径: {report['cases_path']}",
         f"- 总用例数: {s['total_cases']}", "",
+        "## 评估结论", "",
+        f"- 结论: {info.get('verdict', '-')}",
+        f"- 平均耗时: {latency.get('avg_seconds', '-')}s",
+        f"- P95 耗时: {latency.get('p95_seconds', '-')}s",
+        f"- 建议: {', '.join(info.get('recommendations', [])) or '-'}",
+        "",
         "## 核心指标", "",
-        f"| 指标 | 值 |",
-        f"|------|---:|",
+        "| 指标 | 值 |",
+        "|------|---:|",
         f"| 成功率 | {_fmt_pct(s['success_rate'])} |",
         f"| 约束满足率 | {_fmt_pct(s['constraint_satisfaction_rate'])} |",
         f"| 天数一致率 | {_fmt_pct(s['days_match_rate'])} |",
@@ -517,8 +599,8 @@ def _make_markdown(report: Dict[str, Any]) -> str:
         f"| 最长耗时 | {s['max_latency_ms']}ms |",
         "",
         "## 数据质量", "",
-        f"| 指标 | 值 |",
-        f"|------|---:|",
+        "| 指标 | 值 |",
+        "|------|---:|",
         f"| 虚假景点名 | {s['fake_attraction_total']} |",
         f"| 虚假地址 | {s['fake_address_total']} |",
         f"| 坐标重复 | {s['coord_duplicate_total']} |",
@@ -643,20 +725,32 @@ def main() -> int:
     if summary["success_rate"] < args.min_success_rate:
         gate_reasons.append(f"成功率 {_fmt_pct(summary['success_rate'])} < {_fmt_pct(args.min_success_rate)}")
     if summary["constraint_satisfaction_rate"] < args.min_constraint_rate:
-        gate_reasons.append(f"约束满足率 {_fmt_pct(summary['constraint_satisfaction_rate'])} < {_fmt_pct(args.min_constraint_rate)}")
+        gate_reasons.append(
+            f"约束满足率 {_fmt_pct(summary['constraint_satisfaction_rate'])} < "
+            f"{_fmt_pct(args.min_constraint_rate)}"
+        )
     if summary["location_coverage_rate"] < args.min_location_rate:
-        gate_reasons.append(f"坐标覆盖率 {_fmt_pct(summary['location_coverage_rate'])} < {_fmt_pct(args.min_location_rate)}")
+        gate_reasons.append(
+            f"坐标覆盖率 {_fmt_pct(summary['location_coverage_rate'])} < {_fmt_pct(args.min_location_rate)}"
+        )
     if summary["data_authenticity_rate"] < args.min_authenticity_rate:
-        gate_reasons.append(f"数据真实率 {_fmt_pct(summary['data_authenticity_rate'])} < {_fmt_pct(args.min_authenticity_rate)}")
-    if args.max_avg_latency_ms > 0 and summary["avg_latency_ms"] is not None:
-        if summary["avg_latency_ms"] > args.max_avg_latency_ms:
-            gate_reasons.append(f"平均耗时 {summary['avg_latency_ms']}ms > {args.max_avg_latency_ms}ms")
+        gate_reasons.append(
+            f"数据真实率 {_fmt_pct(summary['data_authenticity_rate'])} < "
+            f"{_fmt_pct(args.min_authenticity_rate)}"
+        )
+    if (
+        args.max_avg_latency_ms > 0
+        and summary["avg_latency_ms"] is not None
+        and summary["avg_latency_ms"] > args.max_avg_latency_ms
+    ):
+        gate_reasons.append(f"平均耗时 {summary['avg_latency_ms']}ms > {args.max_avg_latency_ms}ms")
 
     gate = {
         "enabled": args.gate,
         "passed": len(gate_reasons) == 0,
         "reasons": gate_reasons,
     }
+    evaluation_info = _build_evaluation_info(summary, results, gate)
 
     # 生成报告
     report = {
@@ -664,6 +758,7 @@ def main() -> int:
         "cases_path": str(cases_path),
         "summary": summary,
         "summary_cn": _summary_cn(summary),
+        "evaluation_info": evaluation_info,
         "gate": gate,
         "results": [asdict(r) for r in results],
     }
@@ -685,18 +780,21 @@ def main() -> int:
     print(f"{'='*60}")
     for k, v in _summary_cn(summary).items():
         print(f"  {k}: {v}")
+    print(f"  评估结论: {evaluation_info['verdict']}")
+    print(f"  P95耗时(ms): {evaluation_info['latency']['p95_ms']}")
+    print(f"  建议: {', '.join(evaluation_info['recommendations'])}")
     print(f"\n报告 JSON: {report_path}")
     print(f"报告 MD  : {md_path}")
 
     # 门禁判定
     if args.gate:
         if gate_reasons:
-            print(f"\n❌ 门禁未通过:")
+            print("\n❌ 门禁未通过:")
             for r in gate_reasons:
                 print(f"  - {r}")
             return 1
         else:
-            print(f"\n✅ 门禁通过")
+            print("\n✅ 门禁通过")
 
     return 0
 

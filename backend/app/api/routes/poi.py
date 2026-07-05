@@ -1,6 +1,7 @@
 """POI相关API路由"""
 
 from fastapi import APIRouter, HTTPException
+
 from ...services.unsplash_service import get_unsplash_service
 
 router = APIRouter(prefix="/poi", tags=["POI"])
@@ -43,4 +44,4 @@ async def get_attraction_photo(name: str):
         raise HTTPException(
             status_code=500,
             detail=f"获取景点图片失败: {str(e)}"
-        )
+        ) from e

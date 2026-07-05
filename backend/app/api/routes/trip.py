@@ -2,10 +2,12 @@
 
 import json
 import logging
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from ...models.schemas import TripRequest, TripPlanResponse
-from ...workflows.trip_planner_graph import get_trip_planner_workflow
+
+from ...models.schemas import TripPlanResponse, TripRequest
+from ...workflows.trip_planner_graph import NODE_ERROR, get_trip_planner_workflow
 
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
 logger = logging.getLogger(__name__)
@@ -14,6 +16,7 @@ _STEP_LABELS = {
     "search_attractions": "正在搜索景点...",
     "check_weather": "正在查询天气...",
     "find_hotels": "正在搜索酒店...",
+    "context_ready": "正在整合天气和酒店...",
     "plan_itinerary": "正在生成行程计划...",
     "handle_error": "正在恢复...",
 }
@@ -34,7 +37,7 @@ async def plan_trip(request: TripRequest):
         return TripPlanResponse(success=True, message="旅行计划生成成功", data=trip_plan)
     except Exception as e:
         logger.error(f"❌ 生成旅行计划失败: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"生成旅行计划失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"生成旅行计划失败: {str(e)}") from e
 
 
 async def _sse_event(event: str, data: str) -> str:
@@ -58,9 +61,17 @@ async def plan_trip_stream(request: TripRequest):
                 }, ensure_ascii=False))
 
                 if node_output.get("error"):
-                    yield await _sse_event("error", json.dumps({
-                        "message": node_output["error"],
+                    if node_name == NODE_ERROR:
+                        yield await _sse_event("error", json.dumps({
+                            "message": node_output["error"],
+                            "step": node_name,
+                        }, ensure_ascii=False))
+                        return
+
+                    yield await _sse_event("progress", json.dumps({
                         "step": node_name,
+                        "message": f"{label}失败，正在尝试恢复...",
+                        "recovering": True,
                     }, ensure_ascii=False))
 
                 if node_output.get("trip_plan"):
@@ -110,4 +121,4 @@ async def health_check():
         }
     except Exception as e:
         logger.error(f"健康检查失败: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"服务不可用: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"服务不可用: {str(e)}") from e

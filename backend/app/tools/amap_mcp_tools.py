@@ -1,9 +1,12 @@
 """高德地图MCP工具 (LangChain MCP适配器版本)"""
 
-from typing import List, Optional
 import asyncio
 import logging
+from contextlib import suppress
+from typing import List, Optional
+
 import nest_asyncio
+
 try:
     from langchain_mcp_adapters.tools import load_mcp_tools
     MCP_ADAPTERS_AVAILABLE = True
@@ -11,6 +14,7 @@ except ImportError:
     MCP_ADAPTERS_AVAILABLE = False
     load_mcp_tools = None
 from langchain_core.tools import BaseTool, StructuredTool
+
 from ..config import get_settings
 
 # 设置日志记录
@@ -79,11 +83,8 @@ def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
             # 复制其他可能需要的属性
             for attr in ['func', 'coroutine']:
                 if hasattr(tool, attr):
-                    try:
+                    with suppress(AttributeError):
                         setattr(wrapper, attr, getattr(tool, attr))
-                    except AttributeError:
-                        # 某些属性可能是只读的，跳过
-                        pass
 
             wrapped_tools.append(wrapper)
         else:
@@ -96,9 +97,6 @@ def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
 async def create_amap_mcp_tools() -> List[BaseTool]:
     """创建高德地图MCP工具列表"""
     settings = get_settings()
-    
-    print(f"[DEBUG] amap_api_key = '{settings.amap_api_key}'")
-    print(f"[DEBUG] amap_api_key 长度 = {len(settings.amap_api_key)}")
 
     # 验证必要的配置
     if not settings.amap_api_key:
@@ -246,7 +244,7 @@ def get_cached_amap_tools() -> List[BaseTool]:
             raise RuntimeError("高德 MCP 工具加载失败，请检查 uvx/amap-mcp-server/AMAP_API_KEY")
 
         _cached_tools = tools
-        
+
     return _cached_tools
 
 
@@ -255,4 +253,3 @@ def clear_tools_cache():
     global _cached_tools
     _cached_tools = None
     logger.info("工具缓存已清空")
-

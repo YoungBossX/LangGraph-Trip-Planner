@@ -6,13 +6,19 @@ try:
     from typing import Annotated
 except ImportError:
     from typing_extensions import Annotated
-from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
-from ..models.schemas import TripRequest, TripPlan, Attraction, WeatherInfo, Hotel
+from typing_extensions import TypedDict
+
+from ..models.schemas import Attraction, Hotel, TripPlan, TripRequest, WeatherInfo
 
 
 def update_step(prev: str, new: str) -> str:
     """更新步骤，总是使用新值"""
+    return new
+
+
+def replace_value(prev, new):
+    """并行分支写同一控制字段时使用最新值，并允许 None 清空。"""
     return new
 
 
@@ -32,13 +38,13 @@ class TripPlannerState(TypedDict):
 
     # 最终输出
     trip_plan: Optional[TripPlan]
-    error: Optional[str]
+    error: Annotated[Optional[str], replace_value]
     current_step: Annotated[str, update_step]  # 跟踪当前执行步骤
 
     # 错误恢复
-    failed_node: Optional[str]
+    failed_node: Annotated[Optional[str], replace_value]
     last_failed_node: Optional[str]
-    retry_count: int 
+    retry_count: int
 
 
 # 状态辅助函数

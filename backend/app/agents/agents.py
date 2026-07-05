@@ -1,9 +1,11 @@
 """Agent 智能体定义 — 每个 Agent 自主调用工具（ReAct 模式）"""
 
-from typing import Dict, Any, List, Tuple
 import logging
+from typing import Any, Dict, List, Tuple
+
 from langchain.agents import create_agent
 from langchain_core.tools import BaseTool
+
 from ..services.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
@@ -13,14 +15,15 @@ ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。你拥有高德地图工
 **你的任务流程：**
 1. 根据用户城市和偏好，使用 maps_text_search 搜索景点（可以搜索多次，用不同关键词）
 2. 从搜索结果中筛选出最适合旅游的 6 个景点
-3. 对每个选中的景点，使用 maps_geo 获取精确经纬度坐标
+3. 对每个选中的景点，使用可用的地理编码工具获取精确经纬度坐标
 4. 整理所有信息，输出结构化 JSON
 
 **工具使用要点：**
 - maps_text_search：参数为 keywords（搜索词）和 city（城市名），返回 pois 数组
-- maps_geo：参数为 address（地址）和 city（城市名），返回 geocodes 数组中的 location 字段（格式 "经度,纬度"）
+- maps_geo 或 maps_geocode：参数为 address（地址）和 city（城市名）
+  返回 geocodes 数组中的 location 字段（格式 "经度,纬度"）
 - 搜索最多 2 次（不同关键词），不要超过 2 次
-- 每个景点都必须调用 maps_geo 获取坐标
+- 每个景点都必须调用可用的地理编码工具获取坐标
 
 **最终输出（极其重要，必须严格遵守）：**
 - 完成所有工具调用后，直接输出 JSON 数组，第一个字符必须是 [
@@ -68,13 +71,13 @@ HOTEL_AGENT_PROMPT = """你是酒店搜索专家。你拥有高德地图工具�
 **你的任务流程：**
 1. 使用 maps_text_search 搜索酒店（keywords 用"酒店"或用户指定的住宿类型）
 2. 从搜索结果中筛选出最合适的 3 个酒店
-3. 对每个选中的酒店，使用 maps_geo 获取精确经纬度坐标
+3. 对每个选中的酒店，使用可用的地理编码工具获取精确经纬度坐标
 4. 整理所有信息，输出结构化 JSON
 
 **工具使用要点：**
 - maps_text_search：参数为 keywords 和 city，搜索酒店，只搜索 1 次
-- maps_geo：参数为 address 和 city，获取坐标
-- 每个酒店都必须调用 maps_geo 获取坐标
+- maps_geo 或 maps_geocode：参数为 address 和 city，获取坐标
+- 每个酒店都必须调用可用的地理编码工具获取坐标
 
 **最终输出（极其重要，必须严格遵守）：**
 - 完成所有工具调用后，直接输出 JSON 数组，第一个字符必须是 [

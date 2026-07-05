@@ -2,7 +2,9 @@
 import os
 from pathlib import Path
 from typing import List
+
 from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     """应用配置"""
@@ -25,7 +27,7 @@ class Settings(BaseSettings):
     unsplash_access_key: str = ""
     unsplash_secret_key: str = ""
 
-    # LLM配置 
+    # LLM配置
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_model: str = ""

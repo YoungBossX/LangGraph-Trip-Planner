@@ -6,19 +6,17 @@
 - 节点函数只做三件事：构造 query → 调用 agent → 解析输出
 """
 
-from typing import Dict, Any, List, Optional
 import json
-import re
 import logging
-from langgraph.graph import StateGraph, END
+import re
+from typing import Any, Dict, List, Optional
 
-from .trip_planner_state import TripPlannerState, create_initial_state
+from langgraph.graph import END, StateGraph
+
 from ..agents.agents import get_agent
+from ..models.schemas import Attraction, Budget, DayPlan, Hotel, Location, Meal, TripPlan, TripRequest, WeatherInfo
 from ..tools.amap_mcp_tools import get_cached_amap_tools
-from ..models.schemas import (
-    TripRequest, TripPlan, DayPlan, Attraction, Meal, WeatherInfo,
-    Location, Hotel, Budget
-)
+from .trip_planner_state import TripPlannerState, create_initial_state
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +24,7 @@ logger = logging.getLogger(__name__)
 NODE_ATTRACTIONS = "search_attractions"
 NODE_WEATHER = "check_weather"
 NODE_HOTELS = "find_hotels"
+NODE_CONTEXT = "context_ready"
 NODE_PLAN = "plan_itinerary"
 NODE_ERROR = "handle_error"
 
@@ -65,7 +64,7 @@ class TripPlannerWorkflow:
 
             search_geo_tools = [
                 t for t in self.tools
-                if t.name in ("maps_text_search", "maps_geo")
+                if t.name in ("maps_text_search", "maps_geo", "maps_geocode")
             ]
             weather_tools = [
                 t for t in self.tools
@@ -98,21 +97,21 @@ class TripPlannerWorkflow:
         workflow.add_node(NODE_ATTRACTIONS, self._search_attractions)
         workflow.add_node(NODE_WEATHER, self._check_weather)
         workflow.add_node(NODE_HOTELS, self._find_hotels)
+        workflow.add_node(NODE_CONTEXT, self._context_ready)
         workflow.add_node(NODE_PLAN, self._plan_itinerary)
         workflow.add_node(NODE_ERROR, self._handle_error)
         # 设置入口节点
         workflow.set_entry_point(NODE_ATTRACTIONS)
         # 添加条件边
         workflow.add_conditional_edges(
-            NODE_ATTRACTIONS, self._check_error,
-            {"continue": NODE_WEATHER, "error": NODE_ERROR}
+            NODE_ATTRACTIONS,
+            self._route_after_attractions,
+            [NODE_WEATHER, NODE_HOTELS, NODE_ERROR],
         )
+        workflow.add_edge(NODE_WEATHER, NODE_CONTEXT)
+        workflow.add_edge(NODE_HOTELS, NODE_CONTEXT)
         workflow.add_conditional_edges(
-            NODE_WEATHER, self._check_error,
-            {"continue": NODE_HOTELS, "error": NODE_ERROR}
-        )
-        workflow.add_conditional_edges(
-            NODE_HOTELS, self._check_error,
+            NODE_CONTEXT, self._route_after_context,
             {"continue": NODE_PLAN, "error": NODE_ERROR}
         )
         workflow.add_conditional_edges(
@@ -133,7 +132,7 @@ class TripPlannerWorkflow:
         )
 
         return workflow.compile()
-    
+
     def _route_after_error(self, state: TripPlannerState) -> str:
         retry_count = state.get("retry_count", 0)
         failed_node = state.get("failed_node", "")
@@ -145,6 +144,14 @@ class TripPlannerWorkflow:
             return "skip_to_plan"
 
         return "end"
+
+    def _route_after_attractions(self, state: TripPlannerState):
+        if state.get("error"):
+            return NODE_ERROR
+        return [NODE_WEATHER, NODE_HOTELS]
+
+    def _route_after_context(self, state: TripPlannerState) -> str:
+        return "error" if state.get("error") else "continue"
 
     def _check_error(self, state: TripPlannerState) -> str:
         return "error" if state.get("error") else "continue"
@@ -168,7 +175,7 @@ class TripPlannerWorkflow:
                 f"用户偏好: {prefs}\n"
                 f"旅行天数: {request.travel_days} 天\n"
                 f"请根据偏好用不同关键词多次搜索（如 '{request.city}历史古迹'、'{request.city}自然风光' 等），"
-                f"筛选出最适合的 6 个景点，并用 maps_geo 获取每个景点的坐标。"
+                f"筛选出最适合的 6 个景点，并用可用的地理编码工具获取每个景点的坐标。"
             )
 
             # 调用 Agent — Agent 自主执行 ReAct 循环
@@ -182,6 +189,8 @@ class TripPlannerWorkflow:
 
             # 解析 Agent 返回的 JSON → Attraction 对象列表
             attractions = self._parse_attractions_from_agent(output, request.city)
+            if not attractions:
+                raise ValueError("景点 Agent 未返回可用景点数据")
             logger.info(f"解析到 {len(attractions)} 个景点")
 
             return {
@@ -213,6 +222,8 @@ class TripPlannerWorkflow:
             logger.info(f"Agent 输出前300字符: {output[:300]}")
 
             weather_info = self._parse_weather(output)
+            if not weather_info:
+                raise ValueError("天气 Agent 未返回可用天气数据")
             logger.info(f"解析到 {len(weather_info)} 条天气信息")
 
             return {
@@ -238,7 +249,7 @@ class TripPlannerWorkflow:
                 f"请搜索 {request.city} 的酒店。\n"
                 f"用户住宿偏好: {request.accommodation}\n"
                 f"请搜索合适的酒店，筛选出 3 个最佳选择，"
-                f"并用 maps_geo 获取每个酒店的坐标。"
+                f"并用可用的地理编码工具获取每个酒店的坐标。"
             )
 
             result = self.hotel_agent.invoke(
@@ -250,6 +261,8 @@ class TripPlannerWorkflow:
             logger.info(f"Agent 输出前300字符: {output[:300]}")
 
             hotels = self._parse_hotels_from_agent(output, request)
+            if not hotels:
+                raise ValueError("酒店 Agent 未返回可用酒店数据")
             logger.info(f"解析到 {len(hotels)} 个酒店")
 
             return {
@@ -296,6 +309,26 @@ class TripPlannerWorkflow:
             logger.error(f"行程规划失败: {str(e)}", exc_info=True)
             return {"error": f"行程规划失败: {str(e)}", "current_step": "error", "failed_node": NODE_PLAN}
 
+    def _context_ready(self, state: TripPlannerState) -> Dict[str, Any]:
+        """天气和酒店并行分支的轻量汇合点。"""
+        if state.get("error"):
+            return {"current_step": "context_error"}
+
+        if not state.get("weather_info"):
+            return {
+                "error": "天气分支未返回可用数据",
+                "current_step": "error",
+                "failed_node": NODE_WEATHER,
+            }
+        if not state.get("hotels"):
+            return {
+                "error": "酒店分支未返回可用数据",
+                "current_step": "error",
+                "failed_node": NODE_HOTELS,
+            }
+
+        return {"current_step": "context_ready"}
+
     # ========== 节点: 错误处理 ==========
 
     def _handle_error(self, state: TripPlannerState) -> Dict[str, Any]:
@@ -331,12 +364,14 @@ class TripPlannerWorkflow:
 
     # ========== Agent 输出解析：景点 ==========
 
-    def _parse_attractions_from_agent(self, output: str, city: str) -> List[Attraction]:
+    def _parse_attractions_from_agent(self, output: Any, city: str) -> List[Attraction]:
         """解析 Agent 返回的景点 JSON → Attraction 对象列表
 
         Agent 已经自主完成了搜索+筛选+补坐标，这里只做 JSON → Pydantic 转换。
         """
         try:
+            if not isinstance(output, str):
+                output = self._extract_agent_output(output)
             json_str = self._extract_json(output)
             data = json.loads(json_str)
 
@@ -373,9 +408,11 @@ class TripPlannerWorkflow:
 
     # ========== Agent 输出解析：酒店 ==========
 
-    def _parse_hotels_from_agent(self, output: str, request: TripRequest) -> List[Hotel]:
+    def _parse_hotels_from_agent(self, output: Any, request: TripRequest) -> List[Hotel]:
         """解析 Agent 返回的酒店 JSON → Hotel 对象列表"""
         try:
+            if not isinstance(output, str):
+                output = self._extract_agent_output(output)
             json_str = self._extract_json(output)
             data = json.loads(json_str)
 
@@ -415,9 +452,10 @@ class TripPlannerWorkflow:
         """构建给规划 Agent 的查询"""
 
         def _attraction_to_dict(a: Attraction) -> dict:
+            location = {"longitude": a.location.longitude, "latitude": a.location.latitude} if a.location else None
             return {
                 "name": a.name, "address": a.address,
-                "location": {"longitude": a.location.longitude, "latitude": a.location.latitude} if a.location else None,
+                "location": location,
                 "visit_duration": a.visit_duration, "description": a.description,
                 "category": a.category, "ticket_price": a.ticket_price,
             }
@@ -430,9 +468,10 @@ class TripPlannerWorkflow:
             }
 
         def _hotel_to_dict(h: Hotel) -> dict:
+            location = {"longitude": h.location.longitude, "latitude": h.location.latitude} if h.location else None
             return {
                 "name": h.name, "address": h.address,
-                "location": {"longitude": h.location.longitude, "latitude": h.location.latitude} if h.location else None,
+                "location": location,
                 "price_range": h.price_range, "rating": h.rating,
                 "type": h.type, "estimated_cost": h.estimated_cost,
             }
@@ -657,7 +696,7 @@ class TripPlannerWorkflow:
                 candidate = text.rstrip().rstrip(',') + extra + suffix
                 parsed = self._safe_load_json(candidate)
                 if parsed is not None and isinstance(parsed, dict):
-                    logger.warning(f"[截断修复] 修复了截断的 JSON 对象")
+                    logger.warning("[截断修复] 修复了截断的 JSON 对象")
                     return candidate
         return None
 
@@ -846,7 +885,7 @@ class TripPlannerWorkflow:
 
     def plan_trip(self, request: TripRequest) -> TripPlan:
         logger.info(f"\n{'='*60}")
-        logger.info(f"🚀 开始 Agent 旅行规划工作流...")
+        logger.info("🚀 开始 Agent 旅行规划工作流...")
         logger.info(f"目的地: {request.city}")
         logger.info(f"{'='*60}\n")
 
@@ -859,7 +898,7 @@ class TripPlannerWorkflow:
             raise Exception(error_msg)
 
         logger.info(f"\n{'='*60}")
-        logger.info(f"✅ 旅行计划生成完成!")
+        logger.info("✅ 旅行计划生成完成!")
         logger.info(f"{'='*60}\n")
 
         return final_state["trip_plan"]
