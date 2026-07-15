@@ -406,10 +406,10 @@ const getAttractionImage = (name: string, index: number): string => {
   }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="260">
-    <rect width="400" height="260" fill="#eef2f0"/>
-    <circle cx="62" cy="62" r="24" fill="#d8e0dd"/>
-    <path d="M0 198 L112 118 L206 176 L286 104 L400 184 L400 260 L0 260 Z" fill="#d8e0dd"/>
-    <text x="28" y="232" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#66736f">${name || `景点 ${index + 1}`}</text>
+    <rect width="400" height="260" fill="#f5f5f5"/>
+    <circle cx="62" cy="62" r="24" fill="#e5e5e5"/>
+    <path d="M0 198 L112 118 L206 176 L286 104 L400 184 L400 260 L0 260 Z" fill="#e5e5e5"/>
+    <text x="28" y="232" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#666666">${name || `景点 ${index + 1}`}</text>
   </svg>`
 
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
@@ -417,18 +417,18 @@ const getAttractionImage = (name: string, index: number): string => {
 
 const handleImageError = (event: Event) => {
   const img = event.target as HTMLImageElement
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="260"><rect width="400" height="260" fill="#eef2f0"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#66736f">图片暂不可用</text></svg>'
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="260"><rect width="400" height="260" fill="#f5f5f5"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#666666">图片暂不可用</text></svg>'
   img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
 }
 
 const applyExportStyles = (container: HTMLElement) => {
   container.querySelectorAll('.panel, .ant-card').forEach((card) => {
     const el = card as HTMLElement
-    el.style.cssText = 'background-color:#fff;border:1px solid #dfe5e2;border-radius:8px;box-shadow:none;margin-bottom:16px;overflow:hidden'
+    el.style.cssText = 'background-color:#fff;border:1px solid #e0e0e0;border-radius:8px;box-shadow:none;margin-bottom:16px;overflow:hidden'
   })
   container.querySelectorAll('.panel-heading, .ant-card-head').forEach((head) => {
     const el = head as HTMLElement
-    el.style.cssText = 'background-color:#fff;color:#1f2a28;border-bottom:1px solid #dfe5e2;padding:14px 18px;font-size:16px;font-weight:700'
+    el.style.cssText = 'background-color:#fff;color:#111111;border-bottom:1px solid #e0e0e0;padding:14px 18px;font-size:16px;font-weight:700'
   })
   container.querySelectorAll('.ant-card-body').forEach((body) => {
     const el = body as HTMLElement
@@ -436,11 +436,11 @@ const applyExportStyles = (container: HTMLElement) => {
   })
   container.querySelectorAll('.budget-total').forEach((item) => {
     const el = item as HTMLElement
-    el.style.cssText = 'background-color:#e8f5f2;color:#0f766e;padding:14px;border-radius:8px;margin-top:12px'
+    el.style.cssText = 'background-color:#f0f7ff;color:#165dff;padding:14px;border-radius:8px;margin-top:12px'
   })
   container.querySelectorAll('.price-tag').forEach((tag) => {
     const el = tag as HTMLElement
-    el.style.cssText = 'background-color:#fff7f4;color:#f0765f;border:1px solid #ffd3c4;border-radius:999px;padding:3px 8px;font-weight:700'
+    el.style.cssText = 'background-color:#f0f7ff;color:#0b46cc;border:1px solid #a8c5ff;border-radius:999px;padding:3px 8px;font-weight:700'
   })
 }
 
@@ -450,7 +450,7 @@ const prepareExportContainer = async (): Promise<HTMLCanvasElement> => {
 
   const container = document.createElement('div')
   container.style.width = element.offsetWidth + 'px'
-  container.style.backgroundColor = '#f6f8f7'
+  container.style.backgroundColor = '#ffffff'
   container.style.padding = '20px'
   container.innerHTML = element.innerHTML
 
@@ -472,7 +472,7 @@ const prepareExportContainer = async (): Promise<HTMLCanvasElement> => {
   document.body.appendChild(container)
 
   const canvas = await html2canvas(container, {
-    backgroundColor: '#f6f8f7', scale: 2, logging: false, useCORS: true, allowTaint: true,
+    backgroundColor: '#ffffff', scale: 2, logging: false, useCORS: true, allowTaint: true,
   })
 
   document.body.removeChild(container)
@@ -575,7 +575,7 @@ const addAttractionMarkers = (AMap: any) => {
       position: [attraction.location.longitude, attraction.location.latitude],
       title: attraction.name,
       label: {
-        content: `<div style="background:#0f766e;color:#fff;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 4px 10px rgba(15,118,110,.24);">${index + 1}</div>`,
+        content: `<div style="background:#165dff;color:#fff;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 4px 10px rgba(22, 93, 255, 0.24);">${index + 1}</div>`,
         offset: new AMap.Pixel(0, -30)
       }
     })
@@ -587,7 +587,7 @@ const addAttractionMarkers = (AMap: any) => {
           <p style="margin: 4px 0;"><strong>地址:</strong> ${attraction.address}</p>
           <p style="margin: 4px 0;"><strong>游览时长:</strong> ${attraction.visit_duration}分钟</p>
           <p style="margin: 4px 0;"><strong>描述:</strong> ${attraction.description}</p>
-          <p style="margin: 4px 0; color: #0f766e;"><strong>第${attraction.dayIndex + 1}天 景点${attraction.attrIndex + 1}</strong></p>
+          <p style="margin: 4px 0; color: #165dff;"><strong>第${attraction.dayIndex + 1}天 景点${attraction.attrIndex + 1}</strong></p>
         </div>
       `,
       offset: new AMap.Pixel(0, -30)
@@ -630,7 +630,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
     const polyline = new AMap.Polyline({
       path: path,
-      strokeColor: '#0f766e',
+      strokeColor: '#165dff',
       strokeWeight: 4,
       strokeOpacity: 0.78,
       strokeStyle: 'solid',
@@ -646,8 +646,8 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .result-page {
   min-height: 100vh;
   padding: 28px clamp(14px, 3vw, 40px) 48px;
-  background: #f6f8f7;
-  color: #1f2a28;
+  background: #ffffff;
+  color: #111111;
 }
 
 .result-shell {
@@ -665,7 +665,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 .result-header h1 {
   margin: 4px 0 6px;
-  color: #1f2a28;
+  color: #111111;
   font-size: clamp(28px, 4vw, 44px);
   line-height: 1.08;
   font-weight: 850;
@@ -674,18 +674,18 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 .result-header p {
   margin: 0;
-  color: #66736f;
+  color: #666666;
 }
 
 .text-button {
   padding: 0;
-  color: #0f766e;
+  color: #165dff;
   font-weight: 700;
 }
 
 .result-page :deep(.ant-btn-primary) {
-  background: #0f766e;
-  border-color: #0f766e;
+  background: #165dff;
+  border-color: #165dff;
 }
 
 .summary-grid {
@@ -698,26 +698,26 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .metric-card {
   padding: 16px;
   background: #ffffff;
-  border: 1px solid #dfe5e2;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
 }
 
 .metric-card span {
   display: block;
-  color: #66736f;
+  color: #666666;
   font-size: 13px;
 }
 
 .metric-card strong {
   display: block;
   margin-top: 8px;
-  color: #1f2a28;
+  color: #111111;
   font-size: 28px;
 }
 
 .metric-card.accent {
-  background: #fff7f4;
-  border-color: #ffd3c4;
+  background: #f5f5f5;
+  border-color: #d0d0d0;
 }
 
 .content-wrapper {
@@ -732,7 +732,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 }
 
 .side-nav :deep(.ant-menu) {
-  border: 1px solid #dfe5e2;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
   background: #ffffff;
 }
@@ -740,12 +740,12 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .side-nav :deep(.ant-menu-item),
 .side-nav :deep(.ant-menu-submenu-title) {
   border-radius: 6px;
-  color: #46524f;
+  color: #555555;
 }
 
 .side-nav :deep(.ant-menu-item-selected) {
-  color: #0f766e;
-  background: #e8f5f2;
+  color: #165dff;
+  background: #f0f7ff;
 }
 
 .main-content {
@@ -755,7 +755,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .panel {
   margin-bottom: 16px;
   background: #ffffff;
-  border: 1px solid #dfe5e2;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
   overflow: hidden;
 }
@@ -766,24 +766,24 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   gap: 16px;
   align-items: center;
   padding: 16px 18px;
-  border-bottom: 1px solid #edf2f0;
+  border-bottom: 1px solid #e0e0e0;
 }
 
 .panel-heading h2 {
   margin: 0;
-  color: #1f2a28;
+  color: #111111;
   font-size: 18px;
 }
 
 .panel-heading span {
-  color: #66736f;
+  color: #666666;
   font-size: 12px;
 }
 
 .suggestion-text {
   margin: 0;
   padding: 18px;
-  color: #46524f;
+  color: #555555;
   line-height: 1.75;
 }
 
@@ -796,15 +796,15 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 .budget-item {
   padding: 14px;
-  background: #f8fbfa;
-  border: 1px solid #edf2f0;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
 }
 
 .budget-item span,
 .budget-total span {
   display: block;
-  color: #66736f;
+  color: #666666;
   font-size: 13px;
 }
 
@@ -812,7 +812,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .budget-total strong {
   display: block;
   margin-top: 8px;
-  color: #1f2a28;
+  color: #111111;
   font-size: 22px;
 }
 
@@ -822,13 +822,13 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #e8f5f2;
+  background: #f0f7ff;
   border-radius: 8px;
 }
 
 .budget-total strong {
   margin: 0;
-  color: #0f766e;
+  color: #165dff;
   font-size: 28px;
 }
 
@@ -850,7 +850,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 }
 
 .days-panel :deep(.ant-collapse-item) {
-  border-color: #edf2f0;
+  border-color: #e0e0e0;
 }
 
 .days-panel :deep(.ant-collapse-header) {
@@ -870,25 +870,25 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 }
 
 .day-header span {
-  color: #1f2a28;
+  color: #111111;
   font-weight: 800;
 }
 
 .day-header small {
-  color: #66736f;
+  color: #666666;
 }
 
 .day-context {
   padding: 14px;
-  background: #f8fbfa;
-  border: 1px solid #edf2f0;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
   margin-bottom: 18px;
 }
 
 .day-context p {
   margin: 0 0 10px;
-  color: #46524f;
+  color: #555555;
   line-height: 1.7;
 }
 
@@ -900,15 +900,15 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 .context-list span {
   padding: 5px 9px;
-  color: #0f766e;
-  background: #e8f5f2;
+  color: #165dff;
+  background: #f0f7ff;
   border-radius: 999px;
   font-size: 12px;
 }
 
 .subsection-title {
   margin: 18px 0 10px;
-  color: #1f2a28;
+  color: #111111;
   font-weight: 800;
 }
 
@@ -922,7 +922,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   grid-template-columns: 158px minmax(0, 1fr);
   gap: 14px;
   padding: 12px;
-  border: 1px solid #edf2f0;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
   background: #ffffff;
 }
@@ -931,7 +931,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   position: relative;
   overflow: hidden;
   border-radius: 8px;
-  background: #eef2f0;
+  background: #f5f5f5;
   aspect-ratio: 4 / 3;
 }
 
@@ -954,7 +954,7 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   justify-content: center;
   border-radius: 999px;
   color: #ffffff;
-  background: #0f766e;
+  background: #165dff;
   font-weight: 800;
 }
 
@@ -971,16 +971,16 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 .attraction-title-row h3 {
   margin: 0;
-  color: #1f2a28;
+  color: #111111;
   font-size: 17px;
 }
 
 .price-tag {
   flex: 0 0 auto;
   padding: 3px 8px;
-  color: #f0765f;
-  background: #fff7f4;
-  border: 1px solid #ffd3c4;
+  color: #0b46cc;
+  background: #f0f7ff;
+  border: 1px solid #a8c5ff;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 800;
@@ -988,14 +988,14 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 .attraction-meta p {
   margin: 8px 0 10px;
-  color: #46524f;
+  color: #555555;
   line-height: 1.65;
 }
 
 .attraction-meta span {
   display: inline-flex;
   margin: 0 8px 6px 0;
-  color: #66736f;
+  color: #666666;
   font-size: 12px;
 }
 
@@ -1019,13 +1019,13 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 .weather-card {
   padding: 14px;
-  border: 1px solid #dfe5e2;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
-  background: #f8fbfa;
+  background: #fafafa;
 }
 
 .weather-card strong {
-  color: #1f2a28;
+  color: #111111;
 }
 
 .weather-card div {
@@ -1037,11 +1037,11 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 .weather-card span,
 .weather-card small {
-  color: #66736f;
+  color: #666666;
 }
 
 .weather-card b {
-  color: #0f766e;
+  color: #165dff;
 }
 
 .empty-state {
@@ -1058,10 +1058,10 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  background: #0f766e;
+  background: #165dff;
   border-radius: 999px;
   font-weight: 800;
-  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.22);
+  box-shadow: 0 10px 24px rgba(22, 93, 255, 0.22);
 }
 
 @media (max-width: 1100px) {

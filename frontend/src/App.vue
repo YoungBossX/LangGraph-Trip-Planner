@@ -1,14 +1,25 @@
 <template>
-  <router-view />
+  <a-config-provider :theme="themeConfig">
+    <router-view />
+  </a-config-provider>
 </template>
 
 <script setup lang="ts">
+const themeConfig = {
+  token: {
+    colorPrimary: '#165dff',
+    colorText: '#111111',
+    colorTextSecondary: '#666666',
+    colorBorder: '#e0e0e0',
+    borderRadius: 6,
+  },
+}
 </script>
 
 <style>
 :root {
-  color: #1f2a28;
-  background: #f6f8f7;
+  color: #111111;
+  background: #ffffff;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
@@ -26,7 +37,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #f6f8f7;
+  background: #ffffff;
 }
 
 #app {

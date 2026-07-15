@@ -2,38 +2,38 @@
   <main class="home-page">
     <header class="home-nav">
       <div class="brand-mark">Trip Planner</div>
-      <div class="nav-meta">
-        <span>景点</span>
-        <span>天气</span>
-        <span>住宿</span>
-        <span>行程</span>
+      <div class="nav-meta" aria-label="页面导航">
+        <a href="#inspiration">灵感</a>
+        <a href="#plan-form">规划</a>
+        <a href="#workflow">流程</a>
       </div>
     </header>
 
     <section class="home-workspace">
-      <aside class="intro-panel">
-        <p class="eyebrow">TRIP PLANNING WORKSPACE</p>
-        <h1>让行程一目了然</h1>
-        <p class="intro-copy">
-          输入目的地、日期和偏好。系统会通过多 Agent 工作流结合景点、天气、住宿与路线信息，整理成可审阅的旅行计划。
-        </p>
-        <div class="trust-grid">
-          <div class="trust-item">
-            <strong>4</strong>
-            <span>协作节点</span>
-          </div>
-          <div class="trust-item">
-            <strong>SSE</strong>
-            <span>实时进度</span>
-          </div>
-          <div class="trust-item">
-            <strong>AMap</strong>
-            <span>真实地点</span>
-          </div>
+      <aside
+        class="destination-feature"
+        :class="{ 'is-image-fallback': !featuredPreset.imageAvailable || failedPresetImages[featuredPreset.id] }"
+      >
+        <img
+          v-if="featuredPreset.imageAvailable && !failedPresetImages[featuredPreset.id]"
+          :src="featuredPreset.imageSrc"
+          :alt="featuredPreset.imageAlt"
+          class="destination-feature__image"
+          @error="markPresetImageFailed(featuredPreset.id)"
+        />
+        <div v-else class="destination-feature__placeholder">
+          <span>{{ featuredPreset.city }}</span>
+        </div>
+        <div class="destination-feature__scrim" aria-hidden="true"></div>
+        <div class="destination-feature__content">
+          <p class="eyebrow">从一座城市开始</p>
+          <h1>{{ featuredPreset.city }}，{{ featuredPreset.title }}</h1>
+          <p>{{ featuredPreset.description }}</p>
+          <span class="destination-feature__duration">{{ featuredPreset.recommendedDays }} 天推荐停留</span>
         </div>
       </aside>
 
-      <a-card class="request-card" :bordered="false">
+      <a-card id="plan-form" class="request-card" :bordered="false">
         <div class="card-heading">
           <div>
             <h2>创建旅行计划</h2>
@@ -93,8 +93,18 @@
                     <span class="form-label">天数</span>
                   </template>
                   <div class="days-pill">
-                    <strong>{{ formData.travel_days }}</strong>
-                    <span>天</span>
+                    <template v-if="formData.travel_days">
+                      <strong>{{ formData.travel_days }}</strong>
+                      <span>天</span>
+                    </template>
+                    <template v-else-if="selectedPreset">
+                      <strong>{{ selectedPreset.recommendedDays }}</strong>
+                      <span>推荐天数</span>
+                    </template>
+                    <template v-else>
+                      <strong>0</strong>
+                      <span>天</span>
+                    </template>
                   </div>
                 </a-form-item>
               </a-col>
@@ -179,21 +189,76 @@
                 <span>生成进度</span>
                 <strong>{{ loadingStatus }}</strong>
               </div>
-              <a-progress :percent="loadingProgress" status="active" stroke-color="#0f766e" :stroke-width="8" />
+              <a-progress :percent="loadingProgress" status="active" stroke-color="#165dff" :stroke-width="8" />
             </div>
           </a-form-item>
         </a-form>
       </a-card>
     </section>
+
+    <section id="inspiration" class="inspiration-section" aria-labelledby="inspiration-title">
+      <div class="section-intro">
+        <p class="eyebrow">目的地灵感</p>
+        <h2 id="inspiration-title">从一个目的地开始</h2>
+        <p>选择喜欢的城市节奏，再按自己的时间调整细节。</p>
+      </div>
+      <div class="preset-grid">
+        <button
+          v-for="preset in tripPresets"
+          :key="preset.id"
+          type="button"
+          class="preset-tile"
+          :class="{
+            'is-selected': selectedPresetId === preset.id,
+            'is-image-fallback': !preset.imageAvailable || failedPresetImages[preset.id],
+          }"
+          :aria-pressed="selectedPresetId === preset.id"
+          @click="selectPreset(preset)"
+        >
+          <span class="preset-tile__media">
+            <img
+              v-if="preset.imageAvailable && !failedPresetImages[preset.id]"
+              :src="preset.imageSrc"
+              :alt="preset.imageAlt"
+              loading="lazy"
+              @error="markPresetImageFailed(preset.id)"
+            />
+            <span v-else class="preset-tile__placeholder">{{ preset.city }}</span>
+            <span class="preset-tile__scrim" aria-hidden="true"></span>
+            <span class="preset-tile__meta">{{ preset.city }} · {{ preset.recommendedDays }} 天</span>
+          </span>
+          <span class="preset-tile__content">
+            <strong>{{ preset.title }}</strong>
+            <span class="preset-tile__description">{{ preset.description }}</span>
+            <span class="preset-tile__command">带入计划</span>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section id="workflow" class="workflow-band" aria-labelledby="workflow-title">
+      <div>
+        <p class="eyebrow">规划依据</p>
+        <h2 id="workflow-title">把灵感整理成可执行的行程</h2>
+      </div>
+      <ol class="workflow-steps">
+        <li><strong>01</strong><span>选择目的地</span></li>
+        <li><strong>02</strong><span>确认出发日期</span></li>
+        <li><strong>03</strong><span>匹配真实地点与天气</span></li>
+        <li><strong>04</strong><span>继续编辑行程</span></li>
+      </ol>
+    </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { tripPresets, type TripPreset } from '@/data/tripPresets'
 import { generateTripPlanStream } from '@/services/api'
 import type { TripFormData } from '@/types'
+import { suggestPresetEndDate } from '@/utils/presetDates'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 
@@ -229,18 +294,61 @@ const formData = reactive<TripFormState>({
   free_text_input: ''
 })
 
-watch([() => formData.start_date, () => formData.end_date], ([start, end]) => {
-  if (start && end) {
-    const days = end.diff(start, 'day') + 1
-    if (days > 0 && days <= 30) {
-      formData.travel_days = days
-    } else if (days > 30) {
-      message.warning('旅行天数不能超过30天')
-      formData.end_date = null
-    } else {
-      message.warning('结束日期不能早于开始日期')
-      formData.end_date = null
+const selectedPresetId = ref<TripPreset['id'] | null>(null)
+const failedPresetImages = reactive<Partial<Record<TripPreset['id'], true>>>({})
+const featuredPreset = tripPresets[0]!
+const selectedPreset = computed(
+  () => tripPresets.find((preset) => preset.id === selectedPresetId.value) ?? null,
+)
+
+const selectPreset = (preset: TripPreset) => {
+  selectedPresetId.value = preset.id
+  formData.city = preset.city
+  formData.transportation = preset.transportation
+  formData.accommodation = preset.accommodation
+  formData.preferences = [...preset.preferences]
+
+  const suggestedEndDate = suggestPresetEndDate(
+    formData.start_date,
+    formData.end_date,
+    preset.recommendedDays,
+  )
+
+  if (suggestedEndDate) {
+    formData.end_date = suggestedEndDate
+  }
+}
+
+const markPresetImageFailed = (presetId: TripPreset['id']) => {
+  failedPresetImages[presetId] = true
+}
+
+watch(() => formData.start_date, (start) => {
+  if (start && !formData.end_date && selectedPreset.value) {
+    const suggestedEndDate = suggestPresetEndDate(start, formData.end_date, selectedPreset.value.recommendedDays)
+    if (suggestedEndDate) {
+      formData.end_date = suggestedEndDate
     }
+  }
+})
+
+watch([() => formData.start_date, () => formData.end_date], ([start, end]) => {
+  if (!start || !end) {
+    formData.travel_days = 0
+    return
+  }
+
+  const days = end.diff(start, 'day') + 1
+  if (days > 0 && days <= 30) {
+    formData.travel_days = days
+  } else if (days > 30) {
+    formData.travel_days = 0
+    message.warning('旅行天数不能超过30天')
+    formData.end_date = null
+  } else {
+    formData.travel_days = 0
+    message.warning('结束日期不能早于开始日期')
+    formData.end_date = null
   }
 })
 
@@ -311,10 +419,14 @@ const handleSubmit = async () => {
 .home-page {
   min-height: 100vh;
   padding: 28px clamp(16px, 3vw, 40px) 48px;
-  background:
-    radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 30%),
-    #f6f8f7;
-  color: #1f2a28;
+  overflow-x: clip;
+  background: #ffffff;
+  color: #111111;
+}
+
+.home-page,
+.home-page * {
+  box-sizing: border-box;
 }
 
 .home-nav {
@@ -329,84 +441,136 @@ const handleSubmit = async () => {
 .brand-mark {
   font-size: 16px;
   font-weight: 800;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 .nav-meta {
   display: flex;
   gap: 18px;
-  color: #66736f;
+  color: #666666;
   font-size: 13px;
+}
+
+.nav-meta a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.18s ease;
+}
+
+.nav-meta a:hover,
+.nav-meta a:focus-visible {
+  color: #165dff;
+}
+
+.nav-meta a:focus-visible {
+  outline: 2px solid #165dff;
+  outline-offset: 4px;
 }
 
 .home-workspace {
   max-width: 1220px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(360px, 0.95fr) minmax(560px, 1.05fr);
-  gap: clamp(28px, 4vw, 64px);
-  align-items: start;
+  grid-template-columns: minmax(0, 0.95fr) minmax(560px, 1.05fr);
+  gap: clamp(24px, 3vw, 48px);
+  align-items: stretch;
 }
 
-.intro-panel {
-  padding-top: 28px;
+.destination-feature {
+  position: relative;
+  min-width: 0;
+  min-height: 620px;
+  overflow: hidden;
+  background: #111111;
+  color: #ffffff;
+}
+
+.destination-feature__image,
+.destination-feature__placeholder,
+.destination-feature__scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.destination-feature__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.destination-feature__placeholder {
+  display: grid;
+  place-items: center;
+  background: #dfe3e8;
+  color: #59616c;
+  font-size: 40px;
+  font-weight: 700;
+}
+
+.destination-feature__scrim {
+  background: rgba(17, 17, 17, 0.58);
+}
+
+.destination-feature__content {
+  position: relative;
+  z-index: 1;
+  min-height: 620px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: clamp(28px, 4vw, 48px);
+}
+
+.destination-feature__content h1 {
+  max-width: 520px;
+  margin: 0;
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.destination-feature__content > p:not(.eyebrow) {
+  max-width: 460px;
+  margin: 20px 0 24px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.destination-feature__duration {
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.42);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #0f766e;
+  color: #165dff;
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.intro-panel h1 {
-  margin: 0;
-  max-width: 560px;
-  font-size: clamp(36px, 4vw, 56px);
-  line-height: 1.08;
-  font-weight: 850;
   letter-spacing: 0;
-  text-wrap: balance;
 }
 
-.intro-copy {
-  max-width: 560px;
-  margin: 20px 0 26px;
-  color: #66736f;
-  font-size: 16px;
-  line-height: 1.75;
-}
-
-.trust-grid {
-  max-width: 560px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.trust-item {
-  padding: 14px;
-  background: #ffffff;
-  border: 1px solid #dfe5e2;
-  border-radius: 8px;
-}
-
-.trust-item strong {
-  display: block;
-  color: #0f766e;
-  font-size: 20px;
-}
-
-.trust-item span {
-  color: #66736f;
-  font-size: 12px;
+.destination-feature .eyebrow {
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .request-card {
-  border: 1px solid #dfe5e2;
+  min-width: 0;
+  height: 100%;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
-  box-shadow: 0 18px 44px rgba(31, 42, 40, 0.08);
+  box-shadow: 0 16px 38px rgba(17, 17, 17, 0.07);
+  scroll-margin-top: 24px;
+}
+
+.request-card :deep(.ant-card-body) {
+  height: 100%;
 }
 
 .card-heading {
@@ -420,28 +584,29 @@ const handleSubmit = async () => {
 .card-heading h2 {
   margin: 0 0 6px;
   font-size: 22px;
-  color: #1f2a28;
+  color: #111111;
 }
 
 .card-heading p {
   margin: 0;
-  color: #66736f;
+  color: #666666;
 }
 
 .data-badge {
   flex: 0 0 auto;
   padding: 6px 10px;
-  border-radius: 999px;
-  color: #0f766e;
-  background: #e8f5f2;
-  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 4px;
+  color: #165dff;
+  background: #ffffff;
+  border: 1px solid rgba(22, 93, 255, 0.18);
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .form-section {
   padding: 18px 0 6px;
-  border-top: 1px solid #edf2f0;
+  border-top: 1px solid #e0e0e0;
 }
 
 .form-section:first-of-type {
@@ -457,17 +622,17 @@ const handleSubmit = async () => {
 }
 
 .section-heading span {
-  color: #1f2a28;
+  color: #111111;
   font-size: 15px;
   font-weight: 800;
 }
 
 .section-heading small {
-  color: #8a9692;
+  color: #666666;
 }
 
 .form-label {
-  color: #46524f;
+  color: #555555;
   font-weight: 650;
 }
 
@@ -475,7 +640,7 @@ const handleSubmit = async () => {
 .quiet-input :deep(.ant-picker),
 .quiet-textarea :deep(.ant-input),
 .quiet-select :deep(.ant-select-selector) {
-  border-color: #d8e0dd !important;
+  border-color: #e5e5e5 !important;
   border-radius: 6px !important;
   box-shadow: none !important;
 }
@@ -484,31 +649,40 @@ const handleSubmit = async () => {
 .quiet-input :deep(.ant-picker:hover),
 .quiet-textarea :deep(.ant-input:hover),
 .quiet-select:hover :deep(.ant-select-selector) {
-  border-color: #0f766e !important;
+  border-color: #165dff !important;
 }
 
 .quiet-input :deep(.ant-input:focus),
 .quiet-input :deep(.ant-picker-focused),
 .quiet-textarea :deep(.ant-input:focus),
 .quiet-select :deep(.ant-select-focused .ant-select-selector) {
-  border-color: #0f766e !important;
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1) !important;
+  border-color: #165dff !important;
+  box-shadow: 0 0 0 3px rgba(22, 93, 255, 0.1) !important;
 }
 
 .days-pill {
   height: 40px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 0;
   border-radius: 6px;
-  color: #0f766e;
-  background: #e8f5f2;
-  border: 1px solid rgba(15, 118, 110, 0.18);
+  color: #165dff;
+  background: #f0f7ff;
+  border: 1px solid rgba(22, 93, 255, 0.18);
 }
 
 .days-pill strong {
-  font-size: 22px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.days-pill span {
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .preference-grid {
@@ -518,27 +692,43 @@ const handleSubmit = async () => {
 }
 
 .preference-pill {
+  position: relative;
   margin: 0;
 }
 
 .preference-pill :deep(.ant-checkbox) {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.preference-pill:focus-within {
+  border-radius: 4px;
+  outline: 3px solid #165dff;
+  outline-offset: 3px;
 }
 
 .preference-pill :deep(span:last-child) {
   display: inline-flex;
   padding: 7px 12px;
-  border: 1px solid #d8e0dd;
-  border-radius: 999px;
-  color: #46524f;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  color: #555555;
   background: #ffffff;
   transition: all 0.18s ease;
 }
 
 .preference-pill :deep(.ant-checkbox-checked + span) {
-  color: #0f766e;
-  background: #e8f5f2;
-  border-color: rgba(15, 118, 110, 0.32);
+  color: #165dff;
+  background: #f0f7ff;
+  border-color: rgba(22, 93, 255, 0.32);
 }
 
 .submit-row {
@@ -548,22 +738,22 @@ const handleSubmit = async () => {
 .submit-button {
   height: 46px;
   border-radius: 6px;
-  background: #0f766e;
-  border-color: #0f766e;
+  background: #165dff;
+  border-color: #165dff;
   font-weight: 800;
   box-shadow: none;
 }
 
 .submit-button:hover,
 .submit-button:focus {
-  background: #0b5f59 !important;
-  border-color: #0b5f59 !important;
+  background: #0b46cc !important;
+  border-color: #0b46cc !important;
 }
 
 .loading-panel {
   padding: 14px;
-  background: #f8fbfa;
-  border: 1px solid #dfe5e2;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
 }
 
@@ -572,20 +762,230 @@ const handleSubmit = async () => {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 10px;
-  color: #66736f;
+  color: #666666;
 }
 
 .loading-copy strong {
-  color: #0f766e;
+  color: #165dff;
+}
+
+.inspiration-section,
+.workflow-band {
+  max-width: 1220px;
+  margin: 72px auto 0;
+  scroll-margin-top: 24px;
+}
+
+.section-intro {
+  max-width: 620px;
+}
+
+.section-intro h2,
+.workflow-band h2 {
+  margin: 0;
+  color: #111111;
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.section-intro > p:last-child {
+  margin: 12px 0 0;
+  color: #666666;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.preset-tile {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #dedede;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111111;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.preset-tile:hover {
+  border-color: #9b9b9b;
+}
+
+.preset-tile.is-selected {
+  border-color: #165dff;
+  box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.24);
+}
+
+.preset-tile:focus-visible {
+  outline: 3px solid #165dff;
+  outline-offset: 3px;
+}
+
+.preset-tile__media {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: #e6e9ed;
+}
+
+.preset-tile__media img,
+.preset-tile__placeholder {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.preset-tile__media img {
+  object-fit: cover;
+}
+
+.preset-tile__placeholder {
+  display: grid;
+  place-items: center;
+  background: #e2e6eb;
+  color: #59616c;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.preset-tile__scrim {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 42px;
+  background: rgba(17, 17, 17, 0.58);
+}
+
+.preset-tile__meta {
+  position: absolute;
+  z-index: 1;
+  right: 16px;
+  bottom: 12px;
+  left: 16px;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-tile__content {
+  min-height: 144px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px;
+}
+
+.preset-tile__content strong {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.preset-tile__description {
+  color: #666666;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.preset-tile__command {
+  margin-top: auto;
+  color: #165dff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.workflow-band {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.7fr) minmax(0, 1.3fr);
+  gap: 36px;
+  align-items: end;
+  padding: 36px 0;
+  border-top: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-steps li {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  color: #555555;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.workflow-steps strong {
+  color: #165dff;
+  font-size: 13px;
 }
 
 @media (max-width: 900px) {
-  .home-workspace {
+  .home-workspace,
+  .workflow-band {
     grid-template-columns: 1fr;
   }
 
-  .intro-panel {
-    padding-top: 0;
+  .destination-feature {
+    min-height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  .destination-feature__content {
+    min-height: 100%;
+  }
+
+  .preset-grid {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 6px;
+    padding: 6px 6px 12px;
+    scrollbar-width: thin;
+  }
+
+  .preset-tile {
+    flex: 0 0 300px;
+    scroll-snap-align: start;
+  }
+
+  .workflow-band {
+    align-items: start;
+  }
+
+  .workflow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -596,21 +996,82 @@ const handleSubmit = async () => {
 
   .home-nav {
     margin-bottom: 28px;
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .nav-meta {
-    flex-wrap: wrap;
+    flex: 0 0 auto;
     gap: 10px;
   }
 
-  .trust-grid {
-    grid-template-columns: 1fr;
+  .destination-feature__content {
+    padding: 24px;
+  }
+
+  .destination-feature__content h1 {
+    font-size: 38px;
+  }
+
+  .destination-feature__content > p:not(.eyebrow) {
+    font-size: 15px;
   }
 
   .card-heading {
     flex-direction: column;
+  }
+
+  .request-card :deep(.ant-card-body) {
+    padding: 18px;
+  }
+
+  .inspiration-section,
+  .workflow-band {
+    margin-top: 56px;
+  }
+
+  .section-intro h2,
+  .workflow-band h2 {
+    font-size: 26px;
+  }
+
+  .preset-tile {
+    flex-basis: min(78vw, 300px);
+  }
+
+  .workflow-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-steps li {
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: baseline;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .destination-feature__content {
+    padding: 16px;
+  }
+
+  .destination-feature__content h1 {
+    font-size: 30px;
+  }
+
+  .destination-feature__content > p:not(.eyebrow) {
+    margin: 8px 0 10px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .destination-feature .eyebrow {
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+
+  .destination-feature__duration {
+    padding-top: 8px;
+    font-size: 12px;
+    line-height: 1.3;
   }
 }
 </style>
