@@ -12,6 +12,7 @@ export interface TripPreset {
   readonly accommodation: TripFormData['accommodation']
   readonly preferences: Readonly<TripFormData['preferences']>
   readonly imageSrc: string
+  readonly imageSrcSet: string
   readonly imageAvailable: boolean
   readonly imageAlt: string
 }
@@ -27,7 +28,8 @@ export const tripPresets: readonly TripPreset[] = [
     accommodation: '舒适型酒店',
     preferences: ['历史文化', '自然风光', '休闲'],
     imageSrc: '/inspiration/hangzhou.webp',
-    imageAvailable: false,
+    imageSrcSet: '/inspiration/hangzhou-800.webp 800w, /inspiration/hangzhou.webp 1600w',
+    imageAvailable: true,
     imageAlt: '西湖岸边的杭州城市风景',
   },
   {
@@ -40,8 +42,9 @@ export const tripPresets: readonly TripPreset[] = [
     accommodation: '舒适型酒店',
     preferences: ['历史文化', '艺术'],
     imageSrc: '/inspiration/beijing.webp',
-    imageAvailable: false,
-    imageAlt: '北京古建筑与城市天际线',
+    imageSrcSet: '/inspiration/beijing-800.webp 800w, /inspiration/beijing.webp 1600w',
+    imageAvailable: true,
+    imageAlt: '天坛祈年殿古建筑',
   },
   {
     id: 'shanghai',
@@ -53,7 +56,8 @@ export const tripPresets: readonly TripPreset[] = [
     accommodation: '舒适型酒店',
     preferences: ['艺术', '购物', '美食'],
     imageSrc: '/inspiration/shanghai.webp',
-    imageAvailable: false,
+    imageSrcSet: '/inspiration/shanghai-800.webp 800w, /inspiration/shanghai.webp 1600w',
+    imageAvailable: true,
     imageAlt: '上海外滩与陆家嘴城市天际线',
   },
   {
@@ -66,7 +70,8 @@ export const tripPresets: readonly TripPreset[] = [
     accommodation: '经济型酒店',
     preferences: ['美食', '休闲'],
     imageSrc: '/inspiration/changsha.webp',
-    imageAvailable: false,
-    imageAlt: '长沙夜景与热闹街道',
+    imageSrcSet: '/inspiration/changsha-800.webp 800w, /inspiration/changsha.webp 1600w',
+    imageAvailable: true,
+    imageAlt: '湘江与橘子洲的长沙风景',
   },
 ]

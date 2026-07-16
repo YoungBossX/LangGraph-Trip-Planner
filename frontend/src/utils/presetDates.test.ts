@@ -27,12 +27,32 @@ describe('tripPresets', () => {
     expect(tripPresets.every((preset) => preset.recommendedDays >= 1 && preset.recommendedDays <= 30)).toBe(true)
   })
 
-  it('reserves the approved local image slots in placeholder mode', () => {
-    expect(tripPresets.map(({ imageSrc, imageAvailable }) => ({ imageSrc, imageAvailable }))).toEqual([
-      { imageSrc: '/inspiration/hangzhou.webp', imageAvailable: false },
-      { imageSrc: '/inspiration/beijing.webp', imageAvailable: false },
-      { imageSrc: '/inspiration/shanghai.webp', imageAvailable: false },
-      { imageSrc: '/inspiration/changsha.webp', imageAvailable: false },
+  it('keeps the source-cleared local responsive image slots enabled', () => {
+    expect(tripPresets.map(({ imageSrc, imageSrcSet, imageAvailable, imageAlt }) => ({ imageSrc, imageSrcSet, imageAvailable, imageAlt }))).toEqual([
+      {
+        imageSrc: '/inspiration/hangzhou.webp',
+        imageSrcSet: '/inspiration/hangzhou-800.webp 800w, /inspiration/hangzhou.webp 1600w',
+        imageAvailable: true,
+        imageAlt: '西湖岸边的杭州城市风景',
+      },
+      {
+        imageSrc: '/inspiration/beijing.webp',
+        imageSrcSet: '/inspiration/beijing-800.webp 800w, /inspiration/beijing.webp 1600w',
+        imageAvailable: true,
+        imageAlt: '天坛祈年殿古建筑',
+      },
+      {
+        imageSrc: '/inspiration/shanghai.webp',
+        imageSrcSet: '/inspiration/shanghai-800.webp 800w, /inspiration/shanghai.webp 1600w',
+        imageAvailable: true,
+        imageAlt: '上海外滩与陆家嘴城市天际线',
+      },
+      {
+        imageSrc: '/inspiration/changsha.webp',
+        imageSrcSet: '/inspiration/changsha-800.webp 800w, /inspiration/changsha.webp 1600w',
+        imageAvailable: true,
+        imageAlt: '湘江与橘子洲的长沙风景',
+      },
     ])
   })
 })

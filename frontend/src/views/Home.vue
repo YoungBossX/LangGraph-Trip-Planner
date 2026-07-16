@@ -6,6 +6,7 @@
         <a href="#inspiration">灵感</a>
         <a href="#plan-form">规划</a>
         <a href="#workflow">流程</a>
+        <a href="/inspiration/ATTRIBUTIONS.md" target="_blank" rel="noopener">图片来源</a>
       </div>
     </header>
 
@@ -17,6 +18,8 @@
         <img
           v-if="featuredPreset.imageAvailable && !failedPresetImages[featuredPreset.id]"
           :src="featuredPreset.imageSrc"
+          :srcset="featuredPreset.imageSrcSet"
+          sizes="(min-width: 1520px) 577px, (min-width: 1283px) calc(41vw - 46px), (min-width: 1231px) 480px, (min-width: 641px) 94vw, calc(100vw - 28px)"
           :alt="featuredPreset.imageAlt"
           class="destination-feature__image"
           @error="markPresetImageFailed(featuredPreset.id)"
@@ -117,7 +120,7 @@
               <small>用于排序</small>
             </div>
             <a-row :gutter="[16, 12]">
-              <a-col :xs="24" :md="8">
+              <a-col :xs="24" :md="6">
                 <a-form-item name="transportation">
                   <template #label>
                     <span class="form-label">交通方式</span>
@@ -130,7 +133,7 @@
                   </a-select>
                 </a-form-item>
               </a-col>
-              <a-col :xs="24" :md="8">
+              <a-col :xs="24" :md="6">
                 <a-form-item name="accommodation">
                   <template #label>
                     <span class="form-label">住宿偏好</span>
@@ -143,7 +146,7 @@
                   </a-select>
                 </a-form-item>
               </a-col>
-              <a-col :xs="24" :md="8">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="preferences">
                   <template #label>
                     <span class="form-label">兴趣偏好</span>
@@ -170,12 +173,17 @@
               <a-textarea
                 v-model:value="formData.free_text_input"
                 placeholder="例如：需要无障碍设施、避开夜间步行、对海鲜过敏"
-                :rows="3"
+                :rows="2"
                 size="large"
                 class="quiet-textarea"
               />
             </a-form-item>
           </section>
+
+          <div v-if="planSummaryItems.length" class="plan-summary" role="group" aria-label="当前计划">
+            <span class="plan-summary__label">当前计划</span>
+            <span v-for="item in planSummaryItems" :key="item" class="plan-summary__item">{{ item }}</span>
+          </div>
 
           <a-form-item class="submit-row">
             <a-button type="primary" html-type="submit" :loading="loading" size="large" block class="submit-button">
@@ -219,6 +227,8 @@
             <img
               v-if="preset.imageAvailable && !failedPresetImages[preset.id]"
               :src="preset.imageSrc"
+              :srcset="preset.imageSrcSet"
+              sizes="(min-width: 1520px) 348px, (min-width: 1334px) calc(25vw - 32px), (min-width: 901px) calc(23.5vw - 12px), min(78vw, 300px)"
               :alt="preset.imageAlt"
               loading="lazy"
               @error="markPresetImageFailed(preset.id)"
@@ -259,6 +269,8 @@ import { tripPresets, type TripPreset } from '@/data/tripPresets'
 import { generateTripPlanStream } from '@/services/api'
 import type { TripFormData } from '@/types'
 import { suggestPresetEndDate } from '@/utils/presetDates'
+import { reconcileSelectedPresetId } from '@/utils/presetSelection'
+import { getPlanSummaryItems } from '@/utils/planSummary'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 
@@ -300,6 +312,19 @@ const featuredPreset = tripPresets[0]!
 const selectedPreset = computed(
   () => tripPresets.find((preset) => preset.id === selectedPresetId.value) ?? null,
 )
+const planSummaryItems = computed(() => {
+  if (!selectedPreset.value) {
+    return []
+  }
+
+  return getPlanSummaryItems({
+    city: formData.city,
+    travelDays: formData.travel_days,
+    recommendedDays: selectedPreset.value.recommendedDays,
+    transportation: formData.transportation,
+    accommodation: formData.accommodation,
+  })
+})
 
 const selectPreset = (preset: TripPreset) => {
   selectedPresetId.value = preset.id
@@ -330,6 +355,10 @@ watch(() => formData.start_date, (start) => {
       formData.end_date = suggestedEndDate
     }
   }
+})
+
+watch(() => formData.city, (city) => {
+  selectedPresetId.value = reconcileSelectedPresetId(selectedPresetId.value, city, tripPresets)
 })
 
 watch([() => formData.start_date, () => formData.end_date], ([start, end]) => {
@@ -430,7 +459,7 @@ const handleSubmit = async () => {
 }
 
 .home-nav {
-  max-width: 1220px;
+  max-width: 1440px;
   margin: 0 auto 36px;
   display: flex;
   justify-content: space-between;
@@ -468,18 +497,18 @@ const handleSubmit = async () => {
 }
 
 .home-workspace {
-  max-width: 1220px;
+  max-width: 1440px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(560px, 1.05fr);
-  gap: clamp(24px, 3vw, 48px);
-  align-items: stretch;
+  grid-template-columns: minmax(480px, 0.82fr) minmax(640px, 1.18fr);
+  gap: 32px;
+  align-items: start;
 }
 
 .destination-feature {
   position: relative;
   min-width: 0;
-  min-height: 620px;
+  min-height: 560px;
   overflow: hidden;
   background: #111111;
   color: #ffffff;
@@ -496,6 +525,7 @@ const handleSubmit = async () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: 36% center;
 }
 
 .destination-feature__placeholder {
@@ -514,7 +544,7 @@ const handleSubmit = async () => {
 .destination-feature__content {
   position: relative;
   z-index: 1;
-  min-height: 620px;
+  min-height: 560px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -735,6 +765,29 @@ const handleSubmit = async () => {
   margin-top: 20px;
 }
 
+.plan-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px 0;
+  border-top: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.plan-summary__label {
+  color: #111111;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.plan-summary__item {
+  padding-left: 10px;
+  border-left: 1px solid #d9d9d9;
+  color: #666666;
+  font-size: 13px;
+}
+
 .submit-button {
   height: 46px;
   border-radius: 6px;
@@ -771,7 +824,7 @@ const handleSubmit = async () => {
 
 .inspiration-section,
 .workflow-band {
-  max-width: 1220px;
+  max-width: 1440px;
   margin: 72px auto 0;
   scroll-margin-top: 24px;
 }
@@ -949,6 +1002,12 @@ const handleSubmit = async () => {
   font-size: 13px;
 }
 
+@media (max-width: 1230px) {
+  .home-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .home-workspace,
   .workflow-band {
@@ -1021,6 +1080,15 @@ const handleSubmit = async () => {
 
   .request-card :deep(.ant-card-body) {
     padding: 18px;
+  }
+
+  .plan-summary__label {
+    flex-basis: 100%;
+  }
+
+  .plan-summary__item {
+    padding-left: 0;
+    border-left: 0;
   }
 
   .inspiration-section,

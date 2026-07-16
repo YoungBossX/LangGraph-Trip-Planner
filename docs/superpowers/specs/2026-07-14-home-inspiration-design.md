@@ -4,6 +4,8 @@
 
 > **2026-07-15 override:** The user approved placeholder mode because the image CDN was unavailable. The four local image paths remain reserved with `imageAvailable: false`; the UI must render a CSS/text placeholder without requesting absent files, and real image sources plus attribution must be added when assets are supplied. This supersedes the prior requirement to acquire images during this implementation.
 
+> **2026-07-15 asset integration:** Source-cleared local WebP assets are now present as four responsive pairs: each city has a 1600 x 1200 `city.webp` source and an 800 x 600 `city-800.webp` source. Presets retain the 1600px `imageSrc`, expose both sources through `imageSrcSet`, and keep `imageAvailable` enabled. Attribution is recorded in `frontend/public/inspiration/ATTRIBUTIONS.md`; the fallback behavior remains required for future load failures.
+
 ## Goal
 
 Turn the homepage from a sparse, single-purpose form into a domestic-travel planning workspace with enough useful content to sustain the page. The page should create a sense of travel through destination-focused presentation and actionable trip examples, while keeping plan creation as the primary task. Real city imagery will replace the initial placeholders after source-cleared assets and attribution are supplied.
@@ -80,10 +82,10 @@ Each preset also defines a supported transportation option, accommodation prefer
 
 ## Image and Loading Strategy
 
-- During this implementation, keep the four `/inspiration/*.webp` paths reserved with `imageAvailable: false`; do not create or download image files.
-- Render an `<img>` only when its corresponding `imageAvailable` flag is `true`. While the flag is `false`, render a neutral CSS/text city-label placeholder so the browser makes no request for the absent path.
-- Asset acquisition is deferred until the user supplies real, source-cleared city files and attribution. At that point, add the matching local file and source record before switching only its corresponding flag to `true`.
-- Once available, the Hangzhou hero image loads eagerly and lower preset images use lazy loading. Target approximately 300 KB per WebP and use fixed aspect ratios with `object-fit: cover` to prevent layout shift.
+- The eight `/inspiration/*.webp` paths form four source-cleared city pairs with attribution in `frontend/public/inspiration/ATTRIBUTIONS.md`: each base path is a 1600 x 1200 source and each `-800` path is an 800 x 600 source. Presets expose `imageAvailable: true` and an `imageSrcSet` containing both variants.
+- Render an `<img>` only when its corresponding `imageAvailable` flag is `true`. If an asset becomes unavailable in a future environment, retain the neutral CSS/text city-label fallback so the page remains usable without a broken image.
+- Future asset replacements must update the local file and its attribution record before changing the corresponding flag or metadata.
+- Once available, the Hangzhou hero image loads eagerly and lower preset images use lazy loading. Both image locations bind the preset `imageSrcSet`; feature `sizes` describes its desktop column and tile `sizes` selects the 800px source at card widths. Target approximately 300 KB per WebP and use fixed aspect ratios with `object-fit: cover` to prevent layout shift.
 - If an available image fails to load, show the same city-label fallback while preserving contrast and preset click behavior.
 - Do not fetch images at runtime or add an external image API dependency.
 

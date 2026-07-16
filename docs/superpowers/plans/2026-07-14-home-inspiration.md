@@ -10,6 +10,8 @@
 
 > **2026-07-15 override:** The user approved placeholder mode because the image CDN was unavailable. The four local image paths remain reserved with `imageAvailable: false`; the UI must render a CSS/text placeholder without requesting absent files, and real image sources plus attribution must be added when assets are supplied. This supersedes the prior requirement to acquire images during this implementation.
 
+> **2026-07-15 asset integration:** The user supplied source-cleared local WebP assets as four responsive pairs: 1600 x 1200 `city.webp` sources and 800 x 600 `city-800.webp` sources. Their attribution is recorded in `frontend/public/inspiration/ATTRIBUTIONS.md`; all corresponding `imageAvailable` flags are now `true`, and `imageSrcSet` exposes both variants.
+
 ---
 
 ## File Structure
