@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +12,23 @@ def _tool(name: str) -> MagicMock:
 
 def _agent_result(content: str) -> dict:
     return {"messages": [{"role": "assistant", "content": content}]}
+
+
+def _weather_response(*dates: str) -> str:
+    return json.dumps(
+        [
+            {
+                "date": weather_date,
+                "day_weather": "sunny",
+                "night_weather": "clear",
+                "day_temp": 20,
+                "night_temp": 10,
+                "wind_direction": "east",
+                "wind_power": "1",
+            }
+            for weather_date in dates
+        ]
+    )
 
 
 def _trip_request():
@@ -79,6 +97,42 @@ def test_check_weather_empty_agent_output_is_error(workflow_and_agents):
     assert result["failed_node"] == NODE_WEATHER
     assert "error" in result
     assert "天气" in result["error"]
+
+
+@pytest.mark.parametrize(
+    ("dates", "error_text"),
+    [
+        (("2026-03-01", "2026-03-03"), "天气日期覆盖"),
+        (("2026-03-01", "2026-03-02", "2026-03-02", "2026-03-03"), "天气日期重复"),
+        (("2026-03-01", "2026-03-02", "2026-03-04"), "天气日期覆盖"),
+    ],
+)
+def test_check_weather_rejects_invalid_date_coverage(workflow_and_agents, dates, error_text):
+    workflow, agents = workflow_and_agents
+    from app.workflows.trip_planner_graph import NODE_WEATHER
+
+    agents["weather"].invoke.return_value = _agent_result(_weather_response(*dates))
+
+    result = workflow._check_weather(_state())
+
+    assert result["failed_node"] == NODE_WEATHER
+    assert error_text in result["error"]
+
+
+def test_check_weather_orders_complete_dates_by_request(workflow_and_agents):
+    workflow, agents = workflow_and_agents
+
+    agents["weather"].invoke.return_value = _agent_result(
+        _weather_response("2026-03-03", "2026-03-01", "2026-03-02")
+    )
+
+    result = workflow._check_weather(_state())
+
+    assert [weather.date for weather in result["weather_info"]] == [
+        "2026-03-01",
+        "2026-03-02",
+        "2026-03-03",
+    ]
 
 
 def test_find_hotels_empty_agent_output_is_error(workflow_and_agents):
@@ -197,7 +251,11 @@ def test_parallel_context_reaches_planner_with_weather_and_hotels(workflow_and_a
     )
     agents["weather"].invoke.return_value = _agent_result(
         '[{"date":"2026-03-01","day_weather":"sunny","night_weather":"clear",'
-        '"day_temp":20,"night_temp":10,"wind_direction":"east","wind_power":"1"}]'
+        '"day_temp":20,"night_temp":10,"wind_direction":"east","wind_power":"1"},'
+        '{"date":"2026-03-02","day_weather":"cloudy","night_weather":"clear",'
+        '"day_temp":18,"night_temp":9,"wind_direction":"east","wind_power":"1"},'
+        '{"date":"2026-03-03","day_weather":"sunny","night_weather":"clear",'
+        '"day_temp":21,"night_temp":11,"wind_direction":"south","wind_power":"1"}]'
     )
     agents["hotel"].invoke.return_value = _agent_result(
         '[{"name":"Lake Hotel","address":"Hangzhou","location":{"longitude":120.2,"latitude":30.3},'

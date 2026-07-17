@@ -9,6 +9,7 @@
 import json
 import logging
 import re
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from langgraph.graph import END, StateGraph
@@ -222,6 +223,7 @@ class TripPlannerWorkflow:
             logger.info(f"Agent 输出前300字符: {output[:300]}")
 
             weather_info = self._parse_weather(output)
+            weather_info = self._validate_weather_coverage(weather_info, request)
             if not weather_info:
                 raise ValueError("天气 Agent 未返回可用天气数据")
             logger.info(f"解析到 {len(weather_info)} 条天气信息")
@@ -715,6 +717,28 @@ class TripPlannerWorkflow:
             return Location(longitude=float(longitude), latitude=float(latitude))
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _requested_dates(request: TripRequest) -> List[str]:
+        start = date.fromisoformat(request.start_date)
+        return [(start + timedelta(days=offset)).isoformat() for offset in range(request.travel_days)]
+
+    @staticmethod
+    def _validate_weather_coverage(weather: List[WeatherInfo], request: TripRequest) -> List[WeatherInfo]:
+        expected = TripPlannerWorkflow._requested_dates(request)
+        by_date: Dict[str, WeatherInfo] = {}
+
+        for weather_item in weather:
+            if weather_item.date in by_date:
+                raise ValueError(f"天气日期重复: {weather_item.date}")
+            by_date[weather_item.date] = weather_item
+
+        if set(by_date) != set(expected):
+            missing = sorted(set(expected) - set(by_date))
+            extra = sorted(set(by_date) - set(expected))
+            raise ValueError(f"天气日期覆盖与请求不一致: 缺失 {missing}, 额外 {extra}")
+
+        return [by_date[weather_date] for weather_date in expected]
 
     def _parse_weather(self, response: str) -> List[WeatherInfo]:
         try:
