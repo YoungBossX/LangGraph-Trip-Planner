@@ -112,7 +112,7 @@ def test_retry_count_resets_when_different_node_fails(workflow_and_agents):
     assert "failed_node" not in result
 
 
-def test_skip_to_plan_clears_failed_node_after_retry_budget(workflow_and_agents):
+def test_retry_exhaustion_preserves_error_and_routes_to_end(workflow_and_agents):
     workflow, _ = workflow_and_agents
     from app.workflows.trip_planner_graph import NODE_WEATHER
 
@@ -125,8 +125,10 @@ def test_skip_to_plan_clears_failed_node_after_retry_budget(workflow_and_agents)
 
     result = workflow._handle_error(state)
 
-    assert result["error"] is None
+    assert result["error"] == "weather unavailable"
     assert result["failed_node"] is None
+    assert result["last_failed_node"] == NODE_WEATHER
+    assert workflow._route_after_error(result) == "end"
 
 
 def test_plan_trip_raises_after_retry_budget_without_partial_data(workflow_and_agents):
@@ -138,6 +140,35 @@ def test_plan_trip_raises_after_retry_budget_without_partial_data(workflow_and_a
         workflow.plan_trip(_trip_request())
 
     assert agents["attraction_search"].invoke.call_count == 3
+
+
+def test_plan_trip_raises_planner_error_after_retry_budget(workflow_and_agents):
+    workflow, agents = workflow_and_agents
+    from langgraph.errors import GraphRecursionError
+
+    agents["attraction_search"].invoke.return_value = _agent_result(
+        '[{"name":"West Lake","address":"Hangzhou","location":{"longitude":120.1,"latitude":30.2},'
+        '"visit_duration":120,"description":"lake","category":"scenic","ticket_price":0}]'
+    )
+    agents["weather"].invoke.return_value = _agent_result(
+        '[{"date":"2026-03-01","day_weather":"sunny","night_weather":"clear",'
+        '"day_temp":20,"night_temp":10,"wind_direction":"east","wind_power":"1"},'
+        '{"date":"2026-03-02","day_weather":"cloudy","night_weather":"clear",'
+        '"day_temp":18,"night_temp":9,"wind_direction":"east","wind_power":"1"},'
+        '{"date":"2026-03-03","day_weather":"sunny","night_weather":"clear",'
+        '"day_temp":21,"night_temp":11,"wind_direction":"south","wind_power":"1"}]'
+    )
+    agents["hotel"].invoke.return_value = _agent_result(
+        '[{"name":"Lake Hotel","address":"Hangzhou","location":{"longitude":120.2,"latitude":30.3},'
+        '"price_range":"200-400","rating":4.5,"type":"budget hotel","estimated_cost":300}]'
+    )
+    agents["planner"].invoke.side_effect = RuntimeError("planner unavailable")
+
+    with pytest.raises(Exception, match="planner unavailable") as exc_info:
+        workflow.plan_trip(_trip_request())
+
+    assert not isinstance(exc_info.value, GraphRecursionError)
+    assert agents["planner"].invoke.call_count == 3
 
 
 def test_weather_and_hotels_are_parallel_branches_after_attractions(workflow_and_agents):

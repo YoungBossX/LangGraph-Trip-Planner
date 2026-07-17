@@ -127,7 +127,6 @@ class TripPlannerWorkflow:
             f"retry_{NODE_WEATHER}": NODE_WEATHER,
             f"retry_{NODE_HOTELS}": NODE_HOTELS,
             f"retry_{NODE_PLAN}": NODE_PLAN,
-            "skip_to_plan": NODE_PLAN,
             "end": END
             }
         )
@@ -143,9 +142,6 @@ class TripPlannerWorkflow:
 
         if retry_count <= MAX_NODE_RETRIES and failed_node and failed_node in _RETRY_ROUTES:
             return f"retry_{failed_node}"
-
-        if state.get("attractions") or state.get("weather_info"):
-            return "skip_to_plan"
 
         return "end"
 
@@ -353,17 +349,11 @@ class TripPlannerWorkflow:
                 "last_failed_node": failed_node,
             }
 
-        if state.get("attractions") or state.get("weather_info"):
-            logger.info("有部分数据，跳过失败节点继续规划")
-            return {
-                "error": None,
-                "failed_node": None,
-            }
-
-        logger.error("所有节点均失败且无可用数据，终止规划")
+        logger.error("节点重试耗尽，终止规划: %s", failed_node)
         return {
-            "error": f"所有节点均失败（最后失败: {failed_node}: {error_msg}），无法生成计划",
+            "error": error_msg,
             "failed_node": None,
+            "last_failed_node": failed_node,
         }
 
     # ========== Agent 输出解析：景点 ==========
