@@ -133,6 +133,80 @@ def test_rate_limiter_serializes_concurrent_calls_at_threshold():
     assert all(decision.retry_after and decision.retry_after > 0 for decision in decisions if not decision.allowed)
 
 
+def test_rate_limiter_defaults_to_ten_thousand_tracked_keys():
+    limiter = InMemoryRateLimiter(clock=MutableClock())
+
+    assert limiter._max_keys == 10_000
+
+
+def test_rate_limiter_bounds_high_cardinality_and_preserves_existing_keys():
+    limiter = InMemoryRateLimiter(clock=MutableClock(), max_keys=3)
+
+    async def fill_and_exceed_capacity():
+        initial = [
+            await limiter.consume("trip-plan", f"203.0.113.{index}", limit=2, window_seconds=60)
+            for index in range(3)
+        ]
+        existing_allowed = await limiter.consume("trip-plan", "203.0.113.0", limit=2, window_seconds=60)
+        existing_rejected = await limiter.consume("trip-plan", "203.0.113.0", limit=2, window_seconds=60)
+        overflow = [
+            await limiter.consume("trip-plan", f"198.51.100.{index}", limit=1, window_seconds=60)
+            for index in range(20)
+        ]
+        return initial, existing_allowed, existing_rejected, overflow
+
+    initial, existing_allowed, existing_rejected, overflow = asyncio.run(fill_and_exceed_capacity())
+
+    assert all(decision.allowed for decision in initial)
+    assert existing_allowed.allowed is True
+    assert existing_rejected.allowed is False
+    assert all(decision.allowed is False for decision in overflow)
+    assert all(isinstance(decision.retry_after, int) and decision.retry_after > 0 for decision in overflow)
+    assert len(limiter._buckets) == 3
+
+
+def test_rate_limiter_sweeps_stale_buckets_before_allocating_new_key():
+    clock = MutableClock(100.0)
+    limiter = InMemoryRateLimiter(clock=clock, max_keys=2)
+
+    async def replace_stale_keys():
+        await limiter.consume("trip-plan", "203.0.113.5", limit=1, window_seconds=10)
+        await limiter.consume("poi-photo", "203.0.113.6", limit=1, window_seconds=20)
+        clock.advance(20.01)
+        return await limiter.consume("trip-plan", "203.0.113.7", limit=1, window_seconds=30)
+
+    decision = asyncio.run(replace_stale_keys())
+
+    assert decision.allowed is True
+    assert set(limiter._buckets) == {("trip-plan", "203.0.113.7")}
+
+
+@pytest.mark.parametrize("max_keys", [0, -1, True])
+def test_rate_limiter_rejects_invalid_max_keys(max_keys):
+    with pytest.raises(ValueError, match="max_keys"):
+        InMemoryRateLimiter(clock=MutableClock(), max_keys=max_keys)
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "expected_retry_after"),
+    [(9.99, 1), (8.99, 2)],
+    ids=["0.01-seconds-remaining", "1.01-seconds-remaining"],
+)
+def test_rate_limiter_rounds_fractional_retry_after_up(elapsed, expected_retry_after):
+    clock = MutableClock(100.0)
+    limiter = InMemoryRateLimiter(clock=clock)
+
+    async def consume_and_reject():
+        await limiter.consume("trip-plan", "203.0.113.5", limit=1, window_seconds=10)
+        clock.advance(elapsed)
+        return await limiter.consume("trip-plan", "203.0.113.5", limit=1, window_seconds=10)
+
+    decision = asyncio.run(consume_and_reject())
+
+    assert decision.allowed is False
+    assert decision.retry_after == expected_retry_after
+
+
 def test_admission_rejects_second_lease_for_same_ip():
     controller = PlanningAdmissionController(global_limit=2, per_ip_limit=1)
 
@@ -202,6 +276,58 @@ def test_admission_release_is_idempotent_and_counts_never_go_negative():
     asyncio.run(release_twice_then_fill())
 
 
+def test_admission_same_ip_acquire_race_allows_exact_per_ip_limit():
+    controller = PlanningAdmissionController(global_limit=10, per_ip_limit=3)
+
+    async def race_acquires():
+        results = await asyncio.gather(
+            *(controller.acquire("203.0.113.5") for _ in range(20)),
+            return_exceptions=True,
+        )
+        leases = [result for result in results if not isinstance(result, BaseException)]
+        errors = [result for result in results if isinstance(result, BaseException)]
+        await asyncio.gather(*(lease.release() for lease in leases))
+        return leases, errors
+
+    leases, errors = asyncio.run(race_acquires())
+
+    assert len(leases) == 3
+    assert len(errors) == 17
+    assert all(isinstance(error, PublicAPIError) for error in errors)
+
+
+def test_admission_global_acquire_race_allows_exact_global_limit():
+    controller = PlanningAdmissionController(global_limit=4, per_ip_limit=1)
+
+    async def race_acquires():
+        results = await asyncio.gather(
+            *(controller.acquire(f"203.0.113.{index}") for index in range(20)),
+            return_exceptions=True,
+        )
+        leases = [result for result in results if not isinstance(result, BaseException)]
+        errors = [result for result in results if isinstance(result, BaseException)]
+        await asyncio.gather(*(lease.release() for lease in leases))
+        return leases, errors
+
+    leases, errors = asyncio.run(race_acquires())
+
+    assert len(leases) == 4
+    assert len(errors) == 16
+    assert all(isinstance(error, PublicAPIError) for error in errors)
+
+
+def test_admission_concurrent_release_of_same_lease_is_idempotent():
+    controller = PlanningAdmissionController(global_limit=1, per_ip_limit=1)
+
+    async def release_concurrently_and_reacquire():
+        lease = await controller.acquire("203.0.113.5")
+        await asyncio.gather(*(lease.release() for _ in range(20)))
+        reacquired = await controller.acquire("203.0.113.6")
+        await reacquired.release()
+
+    asyncio.run(release_concurrently_and_reacquire())
+
+
 def test_admission_context_manager_releases_after_normal_exit():
     controller = PlanningAdmissionController(global_limit=1, per_ip_limit=1)
 
@@ -243,6 +369,29 @@ def test_admission_finally_releases_after_cancellation_simulation():
         await reacquired.release()
 
     asyncio.run(cancel_and_reacquire())
+
+
+def test_admission_actual_task_cancellation_releases_context_lease():
+    controller = PlanningAdmissionController(global_limit=1, per_ip_limit=1)
+
+    async def cancel_holder_and_reacquire():
+        entered = asyncio.Event()
+
+        async def hold_lease():
+            async with await controller.acquire("203.0.113.5"):
+                entered.set()
+                await asyncio.Future()
+
+        task = asyncio.create_task(hold_lease())
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        reacquired = await controller.acquire("203.0.113.5")
+        await reacquired.release()
+
+    asyncio.run(cancel_holder_and_reacquire())
 
 
 @pytest.mark.parametrize(
@@ -316,4 +465,23 @@ def test_guard_singletons_are_cached_configured_and_resettable(monkeypatch):
 
     assert second_limiter is not first_limiter
     assert second_controller is not first_controller
+    reset_api_guards()
+
+
+def test_reset_api_guards_refuses_to_discard_active_singleton_controller():
+    reset_api_guards()
+    limiter = get_rate_limiter()
+    controller = get_planning_admission_controller()
+
+    async def assert_reset_refusal():
+        lease = await controller.acquire("203.0.113.5")
+        try:
+            with pytest.raises(RuntimeError, match="active planning lease"):
+                reset_api_guards()
+            assert get_rate_limiter() is limiter
+            assert get_planning_admission_controller() is controller
+        finally:
+            await lease.release()
+
+    asyncio.run(assert_reset_refusal())
     reset_api_guards()

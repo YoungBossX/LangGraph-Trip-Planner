@@ -3,9 +3,9 @@
 import asyncio
 import math
 import time
-from collections import defaultdict, deque
+from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from starlette.requests import Request
 
@@ -39,6 +39,12 @@ class RateLimitDecision:
     retry_after: int | None = None
 
 
+@dataclass
+class _RateLimitBucket:
+    window_seconds: int
+    timestamps: deque[float] = field(default_factory=deque)
+
+
 def _require_positive_int(value: int, name: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{name} must be a positive integer")
@@ -47,10 +53,34 @@ def _require_positive_int(value: int, name: str) -> None:
 class InMemoryRateLimiter:
     """A deterministic sliding-window limiter scoped by operation and client."""
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic, max_keys: int = 10_000) -> None:
+        _require_positive_int(max_keys, "max_keys")
         self._clock = clock
-        self._attempts: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+        self._max_keys = max_keys
+        self._buckets: dict[tuple[str, str], _RateLimitBucket] = {}
         self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _expire_timestamps(bucket: _RateLimitBucket, now: float) -> None:
+        expiry_cutoff = now - bucket.window_seconds
+        while bucket.timestamps and bucket.timestamps[0] <= expiry_cutoff:
+            bucket.timestamps.popleft()
+
+    def _sweep_expired_buckets(self, now: float) -> None:
+        expired_keys = []
+        for key, bucket in self._buckets.items():
+            self._expire_timestamps(bucket, now)
+            if not bucket.timestamps:
+                expired_keys.append(key)
+
+        for key in expired_keys:
+            del self._buckets[key]
+
+    def _capacity_retry_after(self, now: float) -> int:
+        return min(
+            max(1, math.ceil(bucket.timestamps[-1] + bucket.window_seconds - now))
+            for bucket in self._buckets.values()
+        )
 
     async def consume(
         self,
@@ -65,21 +95,29 @@ class InMemoryRateLimiter:
 
         async with self._lock:
             now = self._clock()
-            timestamps = self._attempts[(scope, client_ip)]
-            expiry_cutoff = now - window_seconds
-            while timestamps and timestamps[0] <= expiry_cutoff:
-                timestamps.popleft()
+            key = (scope, client_ip)
+            bucket = self._buckets.get(key)
+            if bucket is not None:
+                bucket.window_seconds = window_seconds
 
-            if len(timestamps) >= limit:
-                retry_after = max(1, math.ceil(timestamps[0] + window_seconds - now))
+            self._sweep_expired_buckets(now)
+            bucket = self._buckets.get(key)
+            if bucket is None:
+                if len(self._buckets) >= self._max_keys:
+                    return RateLimitDecision(allowed=False, retry_after=self._capacity_retry_after(now))
+                bucket = _RateLimitBucket(window_seconds=window_seconds)
+                self._buckets[key] = bucket
+
+            if len(bucket.timestamps) >= limit:
+                retry_after = max(1, math.ceil(bucket.timestamps[0] + window_seconds - now))
                 return RateLimitDecision(allowed=False, retry_after=retry_after)
 
-            timestamps.append(now)
+            bucket.timestamps.append(now)
             return RateLimitDecision(allowed=True)
 
     async def reset(self) -> None:
         async with self._lock:
-            self._attempts.clear()
+            self._buckets.clear()
 
 
 class PlanningAdmissionController:
@@ -169,6 +207,9 @@ def get_planning_admission_controller() -> PlanningAdmissionController:
 
 
 def reset_api_guards() -> None:
+    """Reset guard singletons for tests from a quiescent caller."""
     global _planning_admission_controller, _rate_limiter
+    if _planning_admission_controller is not None and _planning_admission_controller._active_global:
+        raise RuntimeError("Cannot reset API guards while an active planning lease exists")
     _rate_limiter = None
     _planning_admission_controller = None
