@@ -2,6 +2,7 @@ import asyncio
 import gc
 import sys
 import threading
+import time
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -92,6 +93,33 @@ def test_async_wrapper_times_out_and_cancels_slow_coroutine(monkeypatch):
     assert cancelled.wait(timeout=0.2)
 
 
+def test_async_wrapper_rejects_result_returned_after_timeout(monkeypatch):
+    from app.tools import amap_mcp_tools
+
+    cancelled = threading.Event()
+
+    async def return_after_cancellation(value: str):
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            cancelled.set()
+            return "late result"
+
+    wrapped = amap_mcp_tools.wrap_async_tools(
+        [_structured_async_tool(return_after_cancellation, name="slow-tool")]
+    )[0]
+    monkeypatch.setattr(
+        amap_mcp_tools,
+        "get_settings",
+        lambda: SimpleNamespace(mcp_tool_timeout_seconds=0.01),
+    )
+
+    with pytest.raises(TimeoutError):
+        wrapped._run(value="input")
+
+    assert cancelled.wait(timeout=0.2)
+
+
 def test_async_wrapper_returns_normal_result(monkeypatch):
     from app.tools import amap_mcp_tools
 
@@ -160,8 +188,57 @@ def test_sync_wrapper_returns_once_inside_real_running_loop(monkeypatch):
     assert asyncio.run(main()) == "result:input"
     assert invocation_count == 1
     assert observed["tool_thread_id"] != caller_thread_id
-    assert observed["tool_thread_daemon"] is True
+    assert observed["tool_thread_daemon"] is False
     assert observed["tool_loop_id"] != observed["caller_loop_id"]
+
+
+def test_worker_loop_cancels_spawned_tasks_before_closing(monkeypatch, caplog):
+    from app.tools import amap_mcp_tools
+
+    child_started = threading.Event()
+    child_cancelled = threading.Event()
+    child_completed = threading.Event()
+    worker = {}
+
+    async def child_task():
+        child_started.set()
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            child_cancelled.set()
+            raise
+        finally:
+            child_completed.set()
+
+    async def spawn_child(value: str):
+        worker["thread"] = threading.current_thread()
+        asyncio.create_task(child_task())
+        await asyncio.sleep(0)
+        return f"result:{value}"
+
+    wrapped = amap_mcp_tools.wrap_async_tools([_structured_async_tool(spawn_child)])[0]
+    monkeypatch.setattr(
+        amap_mcp_tools,
+        "get_settings",
+        lambda: SimpleNamespace(mcp_tool_timeout_seconds=1),
+    )
+
+    async def main():
+        return wrapped._run(value="input")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert asyncio.run(main()) == "result:input"
+        assert child_started.wait(timeout=0.2)
+        assert child_cancelled.wait(timeout=0.2)
+        assert child_completed.wait(timeout=0.2)
+        worker["thread"].join(timeout=0.2)
+        gc.collect()
+
+    assert not worker["thread"].is_alive()
+    warning_messages = [str(warning.message) for warning in caught]
+    assert not any("never awaited" in message for message in warning_messages)
+    assert "Task was destroyed but it is pending" not in caplog.text
 
 
 def test_provider_runtime_error_with_asyncio_run_text_propagates_once(monkeypatch):
@@ -197,8 +274,11 @@ def test_slow_tool_times_out_and_finishes_cancellation_inside_real_running_loop(
 
     cancelled = threading.Event()
     completed = threading.Event()
+    worker = {}
 
     async def slow(value: str):
+        worker["task"] = asyncio.current_task()
+        worker["thread"] = threading.current_thread()
         try:
             await asyncio.sleep(1)
         except asyncio.CancelledError:
@@ -223,30 +303,36 @@ def test_slow_tool_times_out_and_finishes_cancellation_inside_real_running_loop(
             asyncio.run(main())
         assert cancelled.wait(timeout=0.2)
         assert completed.wait(timeout=0.2)
+        worker["thread"].join(timeout=0.2)
         gc.collect()
 
+    assert worker["task"].cancelled()
+    assert worker["thread"].daemon is False
+    assert not worker["thread"].is_alive()
     warning_messages = [str(warning.message) for warning in caught]
     assert not any("never awaited" in message for message in warning_messages)
     assert "Task was destroyed but it is pending" not in caplog.text
 
 
-def test_running_loop_bridge_bounds_slow_cancellation_with_stable_timeout(monkeypatch):
+def test_running_loop_timeout_rejects_result_returned_during_cleanup_grace(monkeypatch):
     from app.tools import amap_mcp_tools
 
     cancelled = threading.Event()
     completed = threading.Event()
 
-    async def slow_to_cancel(value: str):
+    async def return_after_cancellation(value: str):
         try:
             await asyncio.sleep(1)
         except asyncio.CancelledError:
             cancelled.set()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.02)
             return "late result"
         finally:
             completed.set()
 
-    wrapped = amap_mcp_tools.wrap_async_tools([_structured_async_tool(slow_to_cancel, name="slow-tool")])[0]
+    wrapped = amap_mcp_tools.wrap_async_tools(
+        [_structured_async_tool(return_after_cancellation, name="slow-tool")]
+    )[0]
     monkeypatch.setattr(
         amap_mcp_tools,
         "get_settings",
@@ -260,4 +346,50 @@ def test_running_loop_bridge_bounds_slow_cancellation_with_stable_timeout(monkey
         asyncio.run(main())
 
     assert cancelled.wait(timeout=0.2)
-    assert completed.wait(timeout=0.5)
+    assert completed.wait(timeout=0.2)
+
+
+def test_running_loop_bridge_bounds_slow_cancellation_with_stable_timeout(monkeypatch):
+    from app.tools import amap_mcp_tools
+
+    started = threading.Event()
+    cancelled = threading.Event()
+    completed = threading.Event()
+    worker = {}
+    thread_errors = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: thread_errors.append(args.exc_value))
+
+    async def slow_to_cancel(value: str):
+        started.set()
+        worker["thread"] = threading.current_thread()
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            cancelled.set()
+            await asyncio.sleep(0.4)
+            return "late result"
+        finally:
+            completed.set()
+
+    wrapped = amap_mcp_tools.wrap_async_tools([_structured_async_tool(slow_to_cancel, name="slow-tool")])[0]
+    monkeypatch.setattr(
+        amap_mcp_tools,
+        "get_settings",
+        lambda: SimpleNamespace(mcp_tool_timeout_seconds=0.1),
+    )
+
+    async def main():
+        return wrapped._run(value="input")
+
+    call_started_at = time.monotonic()
+    with pytest.raises(TimeoutError, match="MCP tool 'slow-tool' timed out"):
+        asyncio.run(main())
+    elapsed = time.monotonic() - call_started_at
+
+    assert started.wait(timeout=0.2)
+    assert elapsed < 0.35
+    assert cancelled.wait(timeout=0.2)
+    assert completed.wait(timeout=0.8)
+    worker["thread"].join(timeout=0.2)
+    assert not worker["thread"].is_alive()
+    assert thread_errors == []

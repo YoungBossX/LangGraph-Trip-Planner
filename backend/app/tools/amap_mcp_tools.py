@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import threading
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import List, Optional
@@ -29,45 +30,140 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 _DEFAULT_UV_CACHE_DIR = _BACKEND_DIR / ".uv-cache"
 _DEFAULT_UV_TOOL_DIR = _BACKEND_DIR / ".uv-tools"
 _SYNC_BRIDGE_GRACE_SECONDS = 0.1
+_WORKER_LOOP_CLEANUP_GRACE_SECONDS = 0.1
 
 
 async def _invoke_async_tool_with_timeout(tool, args, kwargs, timeout):
-    return await asyncio.wait_for(tool._arun(*args, **kwargs), timeout=timeout)
+    task = asyncio.create_task(tool._arun(*args, **kwargs))
+    done, _ = await asyncio.wait((task,), timeout=timeout)
+    if task in done:
+        return task.result()
+
+    task.cancel()
+    with suppress(asyncio.CancelledError, TimeoutError):
+        await asyncio.wait_for(asyncio.shield(task), timeout=_SYNC_BRIDGE_GRACE_SECONDS)
+    raise TimeoutError
 
 
 def _run_async_tool_in_new_loop(tool, args, kwargs, timeout):
     return asyncio.run(_invoke_async_tool_with_timeout(tool, args, kwargs, timeout))
 
 
-def _run_async_tool_in_daemon_thread(tool, args, kwargs, timeout):
+def _resolve_worker_outcome(outcome):
+    _, succeeded, payload = outcome
+    if succeeded:
+        return payload
+    raise payload
+
+
+def _run_cleanup_awaitable(loop, awaitable, deadline):
+    remaining = max(0.0, deadline - time.monotonic())
+    if remaining == 0:
+        with suppress(AttributeError):
+            awaitable.close()
+        with suppress(AttributeError):
+            awaitable.cancel()
+        return
+
+    cleanup_future = asyncio.ensure_future(awaitable, loop=loop)
+    callback_active = True
+
+    def stop_loop(_):
+        if callback_active:
+            loop.stop()
+
+    cleanup_future.add_done_callback(stop_loop)
+    timeout_handle = loop.call_later(remaining, loop.stop)
+    loop.run_forever()
+    callback_active = False
+    timeout_handle.cancel()
+    cleanup_future.remove_done_callback(stop_loop)
+    if cleanup_future.done():
+        with suppress(BaseException):
+            cleanup_future.result()
+    else:
+        cleanup_future.cancel()
+
+
+def _cleanup_worker_loop(loop):
+    deadline = time.monotonic() + _WORKER_LOOP_CLEANUP_GRACE_SECONDS
+    pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        _run_cleanup_awaitable(loop, asyncio.gather(*pending, return_exceptions=True), deadline)
+
+    if time.monotonic() < deadline:
+        _run_cleanup_awaitable(loop, loop.shutdown_asyncgens(), deadline)
+
+    remaining = max(0.0, deadline - time.monotonic())
+    if remaining > 0:
+        if sys.version_info >= (3, 12):
+            shutdown_executor = loop.shutdown_default_executor(timeout=remaining)
+        else:
+            shutdown_executor = loop.shutdown_default_executor()
+        _run_cleanup_awaitable(loop, shutdown_executor, deadline)
+
+
+def _run_async_tool_in_worker_thread(tool, args, kwargs, timeout, deadline):
     result_future = concurrent.futures.Future()
+    worker_ready = threading.Event()
+    cancellation_requested = threading.Event()
+    worker = {}
 
-    def publish_result(result):
-        with suppress(concurrent.futures.InvalidStateError):
-            result_future.set_result(result)
-
-    def publish_error(error):
-        with suppress(concurrent.futures.InvalidStateError):
-            result_future.set_exception(error)
+    def publish(succeeded, payload):
+        result_future.set_result((time.monotonic(), succeeded, payload))
 
     def run():
+        loop = None
         try:
-            result = _run_async_tool_in_new_loop(tool, args, kwargs, timeout)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            task = loop.create_task(tool._arun(*args, **kwargs))
+            worker["loop"] = loop
+            worker["task"] = task
+            worker_ready.set()
+            if cancellation_requested.is_set():
+                task.cancel()
+            result = loop.run_until_complete(task)
         except BaseException as error:
-            publish_error(error)
+            publish(False, error)
         else:
-            publish_result(result)
+            publish(True, result)
+        finally:
+            worker_ready.set()
+            if loop is not None:
+                try:
+                    _cleanup_worker_loop(loop)
+                finally:
+                    asyncio.set_event_loop(None)
+                    loop.close()
 
-    thread = threading.Thread(target=run, name=f"mcp-sync-{tool.name}", daemon=True)
+    thread = threading.Thread(target=run, name=f"mcp-sync-{tool.name}", daemon=False)
     thread.start()
 
+    remaining = max(0.0, deadline - time.monotonic())
     try:
-        return result_future.result(timeout=timeout + _SYNC_BRIDGE_GRACE_SECONDS)
-    except concurrent.futures.TimeoutError as timeout_error:
+        outcome = result_future.result(timeout=remaining)
+    except concurrent.futures.TimeoutError:
         if result_future.done():
-            return result_future.result()
-        result_future.cancel()
-        raise TimeoutError(f"MCP tool '{tool.name}' timed out after {timeout} seconds") from timeout_error
+            outcome = result_future.result()
+            if outcome[0] <= deadline:
+                return _resolve_worker_outcome(outcome)
+    else:
+        if outcome[0] <= deadline:
+            return _resolve_worker_outcome(outcome)
+
+    cancellation_requested.set()
+    cleanup_deadline = time.monotonic() + _SYNC_BRIDGE_GRACE_SECONDS
+    worker_ready.wait(timeout=_SYNC_BRIDGE_GRACE_SECONDS)
+    loop = worker.get("loop")
+    task = worker.get("task")
+    if loop is not None and task is not None and not task.done():
+        with suppress(RuntimeError):
+            loop.call_soon_threadsafe(task.cancel)
+    thread.join(timeout=max(0.0, cleanup_deadline - time.monotonic()))
+    raise TimeoutError(f"MCP tool '{tool.name}' timed out after {timeout} seconds")
 
 
 def _build_amap_mcp_connection() -> dict:
@@ -117,15 +213,18 @@ def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
             class SyncWrapper(tool.__class__):
                 def _run(self, *args, **kwargs):
                     """同步运行方法，内部调用异步方法"""
+                    started_at = time.monotonic()
                     timeout = get_settings().mcp_tool_timeout_seconds
+                    deadline = started_at + timeout
                     # 确保 kwargs 中有 config 参数
                     if 'config' not in kwargs:
                         kwargs['config'] = None
                     try:
                         asyncio.get_running_loop()
                     except RuntimeError:
-                        return _run_async_tool_in_new_loop(self, args, kwargs, timeout)
-                    return _run_async_tool_in_daemon_thread(self, args, kwargs, timeout)
+                        remaining = max(0.0, deadline - time.monotonic())
+                        return _run_async_tool_in_new_loop(self, args, kwargs, remaining)
+                    return _run_async_tool_in_worker_thread(self, args, kwargs, timeout, deadline)
 
             # 创建包装器实例，复制所有属性
             wrapper = SyncWrapper(
