@@ -73,6 +73,43 @@ def workflow_and_agents():
         yield TripPlannerWorkflow(), agents
 
 
+def _set_valid_acquisition_responses(agents):
+    agents["attraction_search"].invoke.return_value = _agent_result(
+        json.dumps(
+            [
+                {
+                    "name": "West Lake",
+                    "address": "West Lake Source Address",
+                    "location": {"longitude": 120.1, "latitude": 30.2},
+                    "visit_duration": 120,
+                    "description": "lake",
+                    "category": "scenic",
+                    "ticket_price": 0,
+                    "poi_id": "poi-west",
+                }
+            ]
+        )
+    )
+    agents["weather"].invoke.return_value = _agent_result(
+        _weather_response("2026-03-01", "2026-03-02", "2026-03-03")
+    )
+    agents["hotel"].invoke.return_value = _agent_result(
+        json.dumps(
+            [
+                {
+                    "name": "Lake Hotel",
+                    "address": "Lake Hotel Source Address",
+                    "location": {"longitude": 120.2, "latitude": 30.3},
+                    "price_range": "200-400",
+                    "rating": 4.5,
+                    "type": "budget hotel",
+                    "estimated_cost": 300,
+                }
+            ]
+        )
+    )
+
+
 def test_search_attractions_empty_agent_output_is_error(workflow_and_agents):
     workflow, agents = workflow_and_agents
     from app.workflows.trip_planner_graph import NODE_ATTRACTIONS
@@ -194,6 +231,25 @@ def test_plan_trip_raises_after_retry_budget_without_partial_data(workflow_and_a
         workflow.plan_trip(_trip_request())
 
     assert agents["attraction_search"].invoke.call_count == 3
+
+
+@pytest.mark.parametrize(
+    ("failing_agent", "error_message"),
+    [
+        pytest.param("weather", "weather unavailable", id="weather"),
+        pytest.param("hotel", "hotel unavailable", id="hotel"),
+    ],
+)
+def test_plan_trip_raises_after_acquisition_retry_budget(workflow_and_agents, failing_agent, error_message):
+    workflow, agents = workflow_and_agents
+    _set_valid_acquisition_responses(agents)
+    agents[failing_agent].invoke.side_effect = RuntimeError(error_message)
+
+    with pytest.raises(Exception, match=error_message):
+        workflow.plan_trip(_trip_request())
+
+    assert agents[failing_agent].invoke.call_count == 3
+    assert agents["planner"].invoke.call_count == 0
 
 
 def test_plan_trip_raises_planner_error_after_retry_budget(workflow_and_agents):
