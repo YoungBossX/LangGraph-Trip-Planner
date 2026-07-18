@@ -1,9 +1,9 @@
 """数据模型定义"""
 import re
 from datetime import date
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 
 def _extract_number(value, default=0):
@@ -40,17 +40,30 @@ def _extract_float(value):
                 return None
     return None
 
+
+CityName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+TripOption = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+Preference = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=30)]
+FreeTextInput = Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)]
+PhotoName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
+
 # ============ 请求模型 ============
 class TripRequest(BaseModel):
     """旅行规划请求"""
-    city: str = Field(..., description="目的地城市", example="杭州")
+    city: CityName = Field(..., description="目的地城市", example="杭州")
     start_date: str = Field(..., description="开始日期 YYYY-MM-DD", example="2025-06-01")
     end_date: str = Field(..., description="结束日期 YYYY-MM-DD", example="2025-06-03")
     travel_days: int = Field(..., description="旅行天数", ge=1, le=30, example=3)
-    transportation: str = Field(..., description="交通方式", example="公共交通")
-    accommodation: str = Field(..., description="住宿偏好", example="经济型酒店")
-    preferences: List[str] = Field(default_factory=list, description="旅行偏好标签", example=["历史文化", "美食"])
-    free_text_input: str = Field(default="", description="额外要求", example="希望多安排一些博物馆")
+    transportation: TripOption = Field(..., description="交通方式", example="公共交通")
+    accommodation: TripOption = Field(..., description="住宿偏好", example="经济型酒店")
+    preferences: List[Preference] = Field(
+        default_factory=list,
+        description="旅行偏好标签",
+        max_length=10,
+        example=["历史文化", "美食"],
+    )
+    free_text_input: FreeTextInput = Field(default="", description="额外要求", example="希望多安排一些博物馆")
 
     @model_validator(mode="after")
     def validate_calendar(self):

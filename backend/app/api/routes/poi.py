@@ -1,7 +1,10 @@
 """POI相关API路由"""
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
 
+from fastapi import APIRouter, HTTPException, Query
+
+from ...models.schemas import PhotoName
 from ...services.unsplash_service import get_unsplash_service
 
 router = APIRouter(prefix="/poi", tags=["POI"])
@@ -12,7 +15,7 @@ router = APIRouter(prefix="/poi", tags=["POI"])
     summary="获取景点图片",
     description="根据景点名称从Unsplash获取图片"
 )
-async def get_attraction_photo(name: str):
+async def get_attraction_photo(name: Annotated[PhotoName, Query(description="景点名称")]):
     """
     获取景点图片
 

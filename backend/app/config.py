@@ -2,6 +2,7 @@
 from pathlib import Path
 from typing import List
 
+from pydantic import PositiveInt
 from pydantic_settings import BaseSettings
 
 
@@ -44,6 +45,18 @@ class Settings(BaseSettings):
     agent_temperature: float = 0.1
     agent_timeout: float = 120.0
     agent_max_tokens: int = 8192
+
+    # 公共演示防护配置
+    max_request_body_bytes: PositiveInt = 16384
+    planning_rate_limit: PositiveInt = 3
+    planning_rate_window_seconds: PositiveInt = 600
+    planning_per_ip_concurrency: PositiveInt = 1
+    planning_global_concurrency: PositiveInt = 2
+    photo_rate_limit: PositiveInt = 30
+    photo_rate_window_seconds: PositiveInt = 60
+    trip_request_timeout_seconds: PositiveInt = 300
+    mcp_tool_timeout_seconds: PositiveInt = 45
+    sse_heartbeat_seconds: PositiveInt = 15
 
     # 日志配置
     log_level: str = "INFO"
