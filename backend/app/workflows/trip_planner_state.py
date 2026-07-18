@@ -10,6 +10,7 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from ..models.schemas import Attraction, Hotel, TripPlan, TripRequest, WeatherInfo
+from .execution_control import ExecutionControl
 
 
 def update_step(prev: str, new: str) -> str:
@@ -27,6 +28,7 @@ class TripPlannerState(TypedDict):
     # 输入
     request: TripRequest
     user_input: str
+    control: Optional[ExecutionControl]
 
     # 中间结果
     attractions: List[Attraction]
@@ -48,11 +50,16 @@ class TripPlannerState(TypedDict):
 
 
 # 状态辅助函数
-def create_initial_state(request: TripRequest, user_input: str = "") -> TripPlannerState:
+def create_initial_state(
+    request: TripRequest,
+    user_input: str = "",
+    control: Optional[ExecutionControl] = None,
+) -> TripPlannerState:
     """创建初始状态"""
     return {
         "request": request,
         "user_input": user_input,
+        "control": control,
         "attractions": [],
         "weather_info": [],
         "hotels": [],

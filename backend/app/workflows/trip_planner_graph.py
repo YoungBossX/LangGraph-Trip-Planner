@@ -17,6 +17,7 @@ from langgraph.graph import END, StateGraph
 from ..agents.agents import get_agent
 from ..models.schemas import Attraction, Budget, DayPlan, Hotel, Location, Meal, TripPlan, TripRequest, WeatherInfo
 from ..tools.amap_mcp_tools import get_cached_amap_tools
+from .execution_control import ExecutionControl, WorkflowCancelledError, WorkflowTimeoutError
 from .trip_planner_state import TripPlannerState, create_initial_state
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,12 @@ _RETRY_ROUTES = {
     NODE_HOTELS: NODE_HOTELS,
     NODE_PLAN: NODE_PLAN,
 }
+
+
+def _check_execution_control(state: TripPlannerState) -> None:
+    control = state.get("control")
+    if control is not None:
+        control.check()
 
 
 class TripPlannerWorkflow:
@@ -180,10 +187,12 @@ class TripPlannerWorkflow:
             )
 
             # 调用 Agent — Agent 自主执行 ReAct 循环
+            _check_execution_control(state)
             result = self.attraction_agent.invoke(
                 self._prepare_agent_input(query, []),
                 config={"recursion_limit": 30}  # 给够迭代次数，因为需要多次工具调用
             )
+            _check_execution_control(state)
 
             output = self._extract_agent_output(result)
             logger.info(f"Agent 输出前300字符: {output[:300]}")
@@ -198,6 +207,8 @@ class TripPlannerWorkflow:
                 "attractions": attractions,
                 "messages": [{"role": "assistant", "content": f"已找到 {len(attractions)} 个景点"}]
             }
+        except (WorkflowTimeoutError, WorkflowCancelledError):
+            raise
         except Exception as e:
             logger.error(f"景点搜索失败: {str(e)}", exc_info=True)
             return {"error": f"景点搜索失败: {str(e)}", "current_step": "error", "failed_node": NODE_ATTRACTIONS}
@@ -214,10 +225,12 @@ class TripPlannerWorkflow:
                 f"旅行日期为 {request.start_date} 至 {request.end_date}。"
             )
 
+            _check_execution_control(state)
             result = self.weather_agent.invoke(
                 self._prepare_agent_input(query, []),
                 config={"recursion_limit": 10}
             )
+            _check_execution_control(state)
 
             output = self._extract_agent_output(result)
             logger.info(f"Agent 输出前300字符: {output[:300]}")
@@ -232,6 +245,8 @@ class TripPlannerWorkflow:
                 "weather_info": weather_info,
                 "messages": [{"role": "assistant", "content": f"已获取 {len(weather_info)} 天天气信息"}]
             }
+        except (WorkflowTimeoutError, WorkflowCancelledError):
+            raise
         except Exception as e:
             logger.error(f"天气查询失败: {str(e)}", exc_info=True)
             return {"error": f"天气查询失败: {str(e)}", "current_step": "error", "failed_node": NODE_WEATHER}
@@ -254,10 +269,12 @@ class TripPlannerWorkflow:
                 f"并用可用的地理编码工具获取每个酒店的坐标。"
             )
 
+            _check_execution_control(state)
             result = self.hotel_agent.invoke(
                 self._prepare_agent_input(query, []),
                 config={"recursion_limit": 20}
             )
+            _check_execution_control(state)
 
             output = self._extract_agent_output(result)
             logger.info(f"Agent 输出前300字符: {output[:300]}")
@@ -272,6 +289,8 @@ class TripPlannerWorkflow:
                 "current_step": "hotels_found",
                 "messages": [{"role": "assistant", "content": f"已找到 {len(hotels)} 个酒店"}]
             }
+        except (WorkflowTimeoutError, WorkflowCancelledError):
+            raise
         except Exception as e:
             logger.error(f"酒店搜索失败: {str(e)}", exc_info=True)
             return {"error": f"酒店搜索失败: {str(e)}", "current_step": "error", "failed_node": NODE_HOTELS}
@@ -291,10 +310,12 @@ class TripPlannerWorkflow:
                 f"天气数: {len(state['weather_info'])}, 酒店数: {len(state['hotels'])}"
             )
 
+            _check_execution_control(state)
             result = self.planner_agent.invoke(
                 self._prepare_agent_input(query, []),
                 config={"recursion_limit": 50}
             )
+            _check_execution_control(state)
 
             output = self._extract_agent_output(result)
             logger.info(f"Planner 输出前300字符: {output[:300]}")
@@ -314,6 +335,8 @@ class TripPlannerWorkflow:
                 "current_step": "plan_completed",
                 "messages": [{"role": "assistant", "content": "行程计划生成完成！"}]
             }
+        except (WorkflowTimeoutError, WorkflowCancelledError):
+            raise
         except Exception as e:
             logger.error(f"行程规划失败: {str(e)}", exc_info=True)
             return {"error": f"行程规划失败: {str(e)}", "current_step": "error", "failed_node": NODE_PLAN}
@@ -1066,13 +1089,13 @@ class TripPlannerWorkflow:
 
     # ========== 入口 ==========
 
-    def plan_trip(self, request: TripRequest) -> TripPlan:
+    def plan_trip(self, request: TripRequest, control: Optional[ExecutionControl] = None) -> TripPlan:
         logger.info(f"\n{'='*60}")
         logger.info("🚀 开始 Agent 旅行规划工作流...")
         logger.info(f"目的地: {request.city}")
         logger.info(f"{'='*60}\n")
 
-        initial_state: TripPlannerState = create_initial_state(request)
+        initial_state: TripPlannerState = create_initial_state(request, control=control)
         final_state = self.graph.invoke(initial_state, config={"recursion_limit": 80})
 
         if final_state.get("error") and not final_state.get("trip_plan"):
@@ -1091,10 +1114,10 @@ class TripPlannerWorkflow:
 
         return final_state["trip_plan"]
 
-    async def astream_plan(self, request: TripRequest):
+    async def astream_plan(self, request: TripRequest, control: Optional[ExecutionControl] = None):
         """异步流式执行工作流，yield (node_name, state_update)"""
         logger.info(f"🚀 开始流式旅行规划: {request.city}")
-        initial_state: TripPlannerState = create_initial_state(request)
+        initial_state: TripPlannerState = create_initial_state(request, control=control)
         async for chunk in self.graph.astream(initial_state, config={"recursion_limit": 80}):
             for node_name, node_output in chunk.items():
                 yield node_name, node_output

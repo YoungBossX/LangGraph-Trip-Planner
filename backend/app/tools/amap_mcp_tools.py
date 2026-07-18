@@ -1,6 +1,7 @@
 """高德地图MCP工具 (LangChain MCP适配器版本)"""
 
 import asyncio
+import concurrent.futures
 import logging
 import os
 import sys
@@ -75,24 +76,39 @@ def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
             class SyncWrapper(tool.__class__):
                 def _run(self, *args, **kwargs):
                     """同步运行方法，内部调用异步方法"""
-                    import asyncio
+                    timeout = get_settings().mcp_tool_timeout_seconds
                     # 确保 kwargs 中有 config 参数
                     if 'config' not in kwargs:
                         kwargs['config'] = None
+
+                    async def invoke_with_timeout():
+                        return await asyncio.wait_for(self._arun(*args, **kwargs), timeout=timeout)
+
+                    coroutine = invoke_with_timeout()
                     try:
                         # 使用 nest_asyncio 允许在已有事件循环中运行
                         nest_asyncio.apply()
-                        return asyncio.run(self._arun(*args, **kwargs))
+                        return asyncio.run(coroutine)
                     except RuntimeError as e:
+                        coroutine.close()
                         if "cannot be called from a running event loop" in str(e):
                             # 如果已经有运行中的事件循环，尝试使用当前循环
                             loop = asyncio.get_event_loop()
                             if loop.is_running():
                                 # 在已有循环中运行
-                                future = asyncio.run_coroutine_threadsafe(
-                                    self._arun(*args, **kwargs), loop
-                                )
-                                return future.result()
+                                fallback_coroutine = invoke_with_timeout()
+                                try:
+                                    future = asyncio.run_coroutine_threadsafe(fallback_coroutine, loop)
+                                except Exception:
+                                    fallback_coroutine.close()
+                                    raise
+                                try:
+                                    return future.result(timeout=timeout)
+                                except concurrent.futures.TimeoutError as timeout_error:
+                                    future.cancel()
+                                    raise TimeoutError(
+                                        f"MCP tool '{self.name}' timed out after {timeout} seconds"
+                                    ) from timeout_error
                         raise
 
             # 创建包装器实例，复制所有属性
@@ -105,6 +121,7 @@ def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
                 callbacks=tool.callbacks if hasattr(tool, 'callbacks') else None,
                 tags=tool.tags if hasattr(tool, 'tags') else None,
                 metadata=tool.metadata if hasattr(tool, 'metadata') else None,
+                response_format=tool.response_format if hasattr(tool, 'response_format') else "content",
             )
 
             # 复制其他可能需要的属性
