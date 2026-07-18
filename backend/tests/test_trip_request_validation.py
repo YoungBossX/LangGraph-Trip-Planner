@@ -21,6 +21,8 @@ def _request_data(**overrides):
     ("overrides", "error_text"),
     [
         ({"start_date": "2026/03/01"}, "dates must use YYYY-MM-DD format"),
+        ({"start_date": "20260301"}, "dates must use YYYY-MM-DD format"),
+        ({"start_date": "2026-02-29"}, "dates must use YYYY-MM-DD format"),
         ({"end_date": "2026-02-28"}, "end_date must be on or after start_date"),
         ({"end_date": "2026-03-04"}, "inclusive date range must equal travel_days"),
     ],
