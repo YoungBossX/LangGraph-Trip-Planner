@@ -1,10 +1,10 @@
 import asyncio
+import gc
 import sys
 import threading
-from concurrent.futures import TimeoutError as FutureTimeoutError
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.tools import StructuredTool
@@ -131,63 +131,133 @@ def test_async_wrapper_preserves_response_format_and_metadata(monkeypatch):
     assert wrapped.args_schema is tool.args_schema
 
 
-def _force_running_loop_fallback(monkeypatch, amap_mcp_tools, future):
-    loop = MagicMock()
-    loop.is_running.return_value = True
-
-    def fail_asyncio_run(coroutine):
-        coroutine.close()
-        raise RuntimeError("asyncio.run() cannot be called from a running event loop")
-
-    def submit_coroutine(coroutine, submitted_loop):
-        assert submitted_loop is loop
-        coroutine.close()
-        return future
-
-    monkeypatch.setattr(amap_mcp_tools.nest_asyncio, "apply", lambda: None)
-    monkeypatch.setattr(amap_mcp_tools.asyncio, "run", fail_asyncio_run)
-    monkeypatch.setattr(amap_mcp_tools.asyncio, "get_event_loop", lambda: loop)
-    monkeypatch.setattr(amap_mcp_tools.asyncio, "run_coroutine_threadsafe", submit_coroutine)
-
-
-def test_running_loop_fallback_bounds_future_result(monkeypatch):
+def test_sync_wrapper_returns_once_inside_real_running_loop(monkeypatch):
     from app.tools import amap_mcp_tools
+
+    invocation_count = 0
+    caller_thread_id = threading.get_ident()
+    observed = {}
 
     async def normal(value: str):
-        return value
+        nonlocal invocation_count
+        invocation_count += 1
+        observed["tool_thread_id"] = threading.get_ident()
+        observed["tool_thread_daemon"] = threading.current_thread().daemon
+        observed["tool_loop_id"] = id(asyncio.get_running_loop())
+        return f"result:{value}"
 
     wrapped = amap_mcp_tools.wrap_async_tools([_structured_async_tool(normal)])[0]
-    future = MagicMock()
-    future.result.return_value = "fallback-result"
-    _force_running_loop_fallback(monkeypatch, amap_mcp_tools, future)
     monkeypatch.setattr(
         amap_mcp_tools,
         "get_settings",
-        lambda: SimpleNamespace(mcp_tool_timeout_seconds=0.25),
+        lambda: SimpleNamespace(mcp_tool_timeout_seconds=1),
     )
 
-    assert wrapped._run(value="input") == "fallback-result"
-    future.result.assert_called_once_with(timeout=0.25)
+    async def main():
+        observed["caller_loop_id"] = id(asyncio.get_running_loop())
+        return wrapped._run(value="input")
+
+    assert asyncio.run(main()) == "result:input"
+    assert invocation_count == 1
+    assert observed["tool_thread_id"] != caller_thread_id
+    assert observed["tool_thread_daemon"] is True
+    assert observed["tool_loop_id"] != observed["caller_loop_id"]
 
 
-def test_running_loop_fallback_cancels_future_and_raises_stable_timeout(monkeypatch):
+def test_provider_runtime_error_with_asyncio_run_text_propagates_once(monkeypatch):
     from app.tools import amap_mcp_tools
 
-    async def slow(value: str):
-        return value
+    invocation_count = 0
+    message = "provider failed: asyncio.run() cannot be called from a running event loop"
 
-    wrapped = amap_mcp_tools.wrap_async_tools([_structured_async_tool(slow, name="slow-tool")])[0]
-    future = MagicMock()
-    future.result.side_effect = FutureTimeoutError
-    _force_running_loop_fallback(monkeypatch, amap_mcp_tools, future)
+    async def fail(value: str):
+        nonlocal invocation_count
+        invocation_count += 1
+        raise RuntimeError(message)
+
+    wrapped = amap_mcp_tools.wrap_async_tools([_structured_async_tool(fail)])[0]
     monkeypatch.setattr(
         amap_mcp_tools,
         "get_settings",
-        lambda: SimpleNamespace(mcp_tool_timeout_seconds=0.25),
+        lambda: SimpleNamespace(mcp_tool_timeout_seconds=0.05),
     )
 
-    with pytest.raises(TimeoutError, match="MCP tool 'slow-tool' timed out"):
-        wrapped._run(value="input")
+    async def main():
+        return wrapped._run(value="input")
 
-    future.result.assert_called_once_with(timeout=0.25)
-    future.cancel.assert_called_once_with()
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(main())
+
+    assert str(exc_info.value) == message
+    assert invocation_count == 1
+
+
+def test_slow_tool_times_out_and_finishes_cancellation_inside_real_running_loop(monkeypatch, caplog):
+    from app.tools import amap_mcp_tools
+
+    cancelled = threading.Event()
+    completed = threading.Event()
+
+    async def slow(value: str):
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        finally:
+            completed.set()
+
+    wrapped = amap_mcp_tools.wrap_async_tools([_structured_async_tool(slow, name="slow-tool")])[0]
+    monkeypatch.setattr(
+        amap_mcp_tools,
+        "get_settings",
+        lambda: SimpleNamespace(mcp_tool_timeout_seconds=0.01),
+    )
+
+    async def main():
+        return wrapped._run(value="input")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(TimeoutError):
+            asyncio.run(main())
+        assert cancelled.wait(timeout=0.2)
+        assert completed.wait(timeout=0.2)
+        gc.collect()
+
+    warning_messages = [str(warning.message) for warning in caught]
+    assert not any("never awaited" in message for message in warning_messages)
+    assert "Task was destroyed but it is pending" not in caplog.text
+
+
+def test_running_loop_bridge_bounds_slow_cancellation_with_stable_timeout(monkeypatch):
+    from app.tools import amap_mcp_tools
+
+    cancelled = threading.Event()
+    completed = threading.Event()
+
+    async def slow_to_cancel(value: str):
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            cancelled.set()
+            await asyncio.sleep(0.2)
+            return "late result"
+        finally:
+            completed.set()
+
+    wrapped = amap_mcp_tools.wrap_async_tools([_structured_async_tool(slow_to_cancel, name="slow-tool")])[0]
+    monkeypatch.setattr(
+        amap_mcp_tools,
+        "get_settings",
+        lambda: SimpleNamespace(mcp_tool_timeout_seconds=0.01),
+    )
+
+    async def main():
+        return wrapped._run(value="input")
+
+    with pytest.raises(TimeoutError, match="MCP tool 'slow-tool' timed out"):
+        asyncio.run(main())
+
+    assert cancelled.wait(timeout=0.2)
+    assert completed.wait(timeout=0.5)

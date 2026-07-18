@@ -5,6 +5,7 @@ import concurrent.futures
 import logging
 import os
 import sys
+import threading
 from contextlib import suppress
 from pathlib import Path
 from typing import List, Optional
@@ -27,6 +28,46 @@ logger = logging.getLogger(__name__)
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
 _DEFAULT_UV_CACHE_DIR = _BACKEND_DIR / ".uv-cache"
 _DEFAULT_UV_TOOL_DIR = _BACKEND_DIR / ".uv-tools"
+_SYNC_BRIDGE_GRACE_SECONDS = 0.1
+
+
+async def _invoke_async_tool_with_timeout(tool, args, kwargs, timeout):
+    return await asyncio.wait_for(tool._arun(*args, **kwargs), timeout=timeout)
+
+
+def _run_async_tool_in_new_loop(tool, args, kwargs, timeout):
+    return asyncio.run(_invoke_async_tool_with_timeout(tool, args, kwargs, timeout))
+
+
+def _run_async_tool_in_daemon_thread(tool, args, kwargs, timeout):
+    result_future = concurrent.futures.Future()
+
+    def publish_result(result):
+        with suppress(concurrent.futures.InvalidStateError):
+            result_future.set_result(result)
+
+    def publish_error(error):
+        with suppress(concurrent.futures.InvalidStateError):
+            result_future.set_exception(error)
+
+    def run():
+        try:
+            result = _run_async_tool_in_new_loop(tool, args, kwargs, timeout)
+        except BaseException as error:
+            publish_error(error)
+        else:
+            publish_result(result)
+
+    thread = threading.Thread(target=run, name=f"mcp-sync-{tool.name}", daemon=True)
+    thread.start()
+
+    try:
+        return result_future.result(timeout=timeout + _SYNC_BRIDGE_GRACE_SECONDS)
+    except concurrent.futures.TimeoutError as timeout_error:
+        if result_future.done():
+            return result_future.result()
+        result_future.cancel()
+        raise TimeoutError(f"MCP tool '{tool.name}' timed out after {timeout} seconds") from timeout_error
 
 
 def _build_amap_mcp_connection() -> dict:
@@ -80,36 +121,11 @@ def wrap_async_tools(tools: List[BaseTool]) -> List[BaseTool]:
                     # 确保 kwargs 中有 config 参数
                     if 'config' not in kwargs:
                         kwargs['config'] = None
-
-                    async def invoke_with_timeout():
-                        return await asyncio.wait_for(self._arun(*args, **kwargs), timeout=timeout)
-
-                    coroutine = invoke_with_timeout()
                     try:
-                        # 使用 nest_asyncio 允许在已有事件循环中运行
-                        nest_asyncio.apply()
-                        return asyncio.run(coroutine)
-                    except RuntimeError as e:
-                        coroutine.close()
-                        if "cannot be called from a running event loop" in str(e):
-                            # 如果已经有运行中的事件循环，尝试使用当前循环
-                            loop = asyncio.get_event_loop()
-                            if loop.is_running():
-                                # 在已有循环中运行
-                                fallback_coroutine = invoke_with_timeout()
-                                try:
-                                    future = asyncio.run_coroutine_threadsafe(fallback_coroutine, loop)
-                                except Exception:
-                                    fallback_coroutine.close()
-                                    raise
-                                try:
-                                    return future.result(timeout=timeout)
-                                except concurrent.futures.TimeoutError as timeout_error:
-                                    future.cancel()
-                                    raise TimeoutError(
-                                        f"MCP tool '{self.name}' timed out after {timeout} seconds"
-                                    ) from timeout_error
-                        raise
+                        asyncio.get_running_loop()
+                    except RuntimeError:
+                        return _run_async_tool_in_new_loop(self, args, kwargs, timeout)
+                    return _run_async_tool_in_daemon_thread(self, args, kwargs, timeout)
 
             # 创建包装器实例，复制所有属性
             wrapper = SyncWrapper(

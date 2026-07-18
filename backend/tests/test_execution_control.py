@@ -17,8 +17,11 @@ class MutableClock:
         return self.now
 
 
-@pytest.mark.parametrize("timeout_seconds", [True, False, 0, -1, -0.5])
-def test_timeout_must_be_positive_and_not_bool(timeout_seconds):
+@pytest.mark.parametrize(
+    "timeout_seconds",
+    [True, False, 0, -1, -0.5, float("nan"), float("inf"), float("-inf")],
+)
+def test_timeout_must_be_positive_finite_and_not_bool(timeout_seconds):
     with pytest.raises(ValueError, match="positive"):
         ExecutionControl(timeout_seconds=timeout_seconds)
 
