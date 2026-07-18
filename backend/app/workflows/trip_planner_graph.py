@@ -300,6 +300,13 @@ class TripPlannerWorkflow:
             logger.info(f"Planner 输出前300字符: {output[:300]}")
 
             trip_plan = self._parse_trip_plan(output, state["request"])
+            trip_plan = self._validate_and_canonicalize_trip_plan(
+                trip_plan,
+                state["request"],
+                state["attractions"],
+                state["weather_info"],
+                state["hotels"],
+            )
             logger.info(f"解析到 {len(trip_plan.days)} 天行程")
 
             return {
@@ -454,6 +461,7 @@ class TripPlannerWorkflow:
                 "location": location,
                 "visit_duration": a.visit_duration, "description": a.description,
                 "category": a.category, "ticket_price": a.ticket_price,
+                "poi_id": a.poi_id,
             }
 
         def _weather_to_dict(w: WeatherInfo) -> dict:
@@ -739,6 +747,162 @@ class TripPlannerWorkflow:
             raise ValueError(f"天气日期覆盖与请求不一致: 缺失 {missing}, 额外 {extra}")
 
         return [by_date[weather_date] for weather_date in expected]
+
+    @staticmethod
+    def _normalize_entity_name(value: str) -> str:
+        return " ".join(value.split()).casefold()
+
+    @classmethod
+    def _build_attraction_source_indexes(
+        cls,
+        source_attractions: List[Attraction],
+    ) -> tuple[Dict[str, tuple[int, Attraction]], Dict[str, tuple[int, Attraction]]]:
+        by_poi_id: Dict[str, tuple[int, Attraction]] = {}
+        by_name: Dict[str, tuple[int, Attraction]] = {}
+
+        for source_index, attraction in enumerate(source_attractions):
+            poi_id = attraction.poi_id
+            if poi_id and poi_id.strip():
+                if poi_id in by_poi_id:
+                    raise ValueError(f"ambiguous source attraction POI ID: {poi_id}")
+                by_poi_id[poi_id] = (source_index, attraction)
+
+            normalized_name = cls._normalize_entity_name(attraction.name)
+            if normalized_name:
+                if normalized_name in by_name:
+                    raise ValueError(f"ambiguous source attraction name: {normalized_name}")
+                by_name[normalized_name] = (source_index, attraction)
+
+        return by_poi_id, by_name
+
+    @classmethod
+    def _build_hotel_source_index(
+        cls,
+        source_hotels: List[Hotel],
+    ) -> Dict[str, tuple[int, Hotel]]:
+        by_name: Dict[str, tuple[int, Hotel]] = {}
+
+        for source_index, hotel in enumerate(source_hotels):
+            normalized_name = cls._normalize_entity_name(hotel.name)
+            if not normalized_name:
+                continue
+            if normalized_name in by_name:
+                raise ValueError(f"ambiguous source hotel name: {normalized_name}")
+            by_name[normalized_name] = (source_index, hotel)
+
+        return by_name
+
+    @classmethod
+    def _resolve_attraction_reference(
+        cls,
+        planner_attraction: Attraction,
+        source_by_poi_id: Dict[str, tuple[int, Attraction]],
+        source_by_name: Dict[str, tuple[int, Attraction]],
+    ) -> tuple[int, Attraction]:
+        poi_id = planner_attraction.poi_id
+        if poi_id and poi_id.strip():
+            resolved = source_by_poi_id.get(poi_id)
+            if resolved is None:
+                raise ValueError(f"unknown attraction POI ID: {poi_id}")
+        else:
+            normalized_name = cls._normalize_entity_name(planner_attraction.name)
+            resolved = source_by_name.get(normalized_name)
+            if resolved is None:
+                raise ValueError(f"unknown attraction: {planner_attraction.name}")
+
+        source_index, source_attraction = resolved
+        return source_index, source_attraction.model_copy(deep=True)
+
+    @classmethod
+    def _resolve_hotel_reference(
+        cls,
+        planner_hotel: Hotel,
+        source_by_name: Dict[str, tuple[int, Hotel]],
+    ) -> tuple[int, Hotel]:
+        normalized_name = cls._normalize_entity_name(planner_hotel.name)
+        resolved = source_by_name.get(normalized_name)
+        if resolved is None:
+            raise ValueError(f"unknown hotel: {planner_hotel.name}")
+
+        source_index, source_hotel = resolved
+        return source_index, source_hotel.model_copy(deep=True)
+
+    def _validate_and_canonicalize_trip_plan(
+        self,
+        plan: TripPlan,
+        request: TripRequest,
+        source_attractions: List[Attraction],
+        source_weather: List[WeatherInfo],
+        source_hotels: List[Hotel],
+    ) -> TripPlan:
+        validated_plan = plan.model_copy(deep=True)
+
+        request_city = request.city.strip()
+        if validated_plan.city.strip() != request_city:
+            raise ValueError("plan city must equal request city")
+        validated_plan.city = request_city
+
+        if validated_plan.start_date != request.start_date:
+            raise ValueError("plan start_date must equal request start_date")
+        if validated_plan.end_date != request.end_date:
+            raise ValueError("plan end_date must equal request end_date")
+        if len(validated_plan.days) != request.travel_days:
+            raise ValueError("plan day count must equal request travel_days")
+
+        requested_dates = self._requested_dates(request)
+        if [day.date for day in validated_plan.days] != requested_dates:
+            raise ValueError("plan day dates must match the exact requested sequence")
+        if [day.day_index for day in validated_plan.days] != list(range(request.travel_days)):
+            raise ValueError("plan day_index values must be zero-based and contiguous")
+
+        source_by_poi_id, source_attractions_by_name = self._build_attraction_source_indexes(
+            source_attractions
+        )
+        source_hotels_by_name = self._build_hotel_source_index(source_hotels)
+
+        required_meal_types = ("breakfast", "lunch", "dinner")
+        allowed_meal_types = set(required_meal_types) | {"snack"}
+
+        for day in validated_plan.days:
+            if not day.attractions:
+                raise ValueError(f"day {day.day_index} must have at least one attraction")
+
+            resolved_attractions: List[Attraction] = []
+            seen_attraction_indexes = set()
+            for planner_attraction in day.attractions:
+                source_index, source_attraction = self._resolve_attraction_reference(
+                    planner_attraction,
+                    source_by_poi_id,
+                    source_attractions_by_name,
+                )
+                if source_index in seen_attraction_indexes:
+                    raise ValueError(f"day {day.day_index} has duplicate attraction references")
+                seen_attraction_indexes.add(source_index)
+                resolved_attractions.append(source_attraction)
+            day.attractions = resolved_attractions
+
+            if day.hotel is None:
+                raise ValueError(f"day {day.day_index} is missing hotel")
+            _, day.hotel = self._resolve_hotel_reference(day.hotel, source_hotels_by_name)
+
+            meal_counts = {meal_type: 0 for meal_type in required_meal_types}
+            for meal in day.meals:
+                normalized_type = meal.type.strip().casefold()
+                if normalized_type not in allowed_meal_types:
+                    raise ValueError(f"unknown meal type: {meal.type}")
+                meal.type = normalized_type
+                if normalized_type in meal_counts:
+                    meal_counts[normalized_type] += 1
+
+            for meal_type in required_meal_types:
+                if meal_counts[meal_type] == 0:
+                    raise ValueError(f"day {day.day_index} is missing required meal: {meal_type}")
+                if meal_counts[meal_type] > 1:
+                    raise ValueError(f"day {day.day_index} has duplicate required meal: {meal_type}")
+
+        ordered_weather = self._validate_weather_coverage(source_weather, request)
+        validated_plan.weather_info = [weather.model_copy(deep=True) for weather in ordered_weather]
+        return validated_plan
 
     def _parse_weather(self, response: str) -> List[WeatherInfo]:
         try:

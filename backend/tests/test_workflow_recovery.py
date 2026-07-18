@@ -246,8 +246,9 @@ def test_parallel_context_reaches_planner_with_weather_and_hotels(workflow_and_a
     workflow, agents = workflow_and_agents
 
     agents["attraction_search"].invoke.return_value = _agent_result(
-        '[{"name":"West Lake","address":"Hangzhou","location":{"longitude":120.1,"latitude":30.2},'
-        '"visit_duration":120,"description":"lake","category":"scenic","ticket_price":0}]'
+        '[{"name":"West Lake","address":"West Lake Source Address",'
+        '"location":{"longitude":120.1,"latitude":30.2},"visit_duration":120,'
+        '"description":"lake","category":"scenic","ticket_price":0,"poi_id":"poi-west"}]'
     )
     agents["weather"].invoke.return_value = _agent_result(
         '[{"date":"2026-03-01","day_weather":"sunny","night_weather":"clear",'
@@ -258,30 +259,82 @@ def test_parallel_context_reaches_planner_with_weather_and_hotels(workflow_and_a
         '"day_temp":21,"night_temp":11,"wind_direction":"south","wind_power":"1"}]'
     )
     agents["hotel"].invoke.return_value = _agent_result(
-        '[{"name":"Lake Hotel","address":"Hangzhou","location":{"longitude":120.2,"latitude":30.3},'
-        '"price_range":"200-400","rating":4.5,"type":"budget hotel","estimated_cost":300}]'
-    )
-    agents["planner"].invoke.return_value = _agent_result(
-        '{"city":"Hangzhou","start_date":"2026-03-01","end_date":"2026-03-03",'
-        '"weather_info":[{"date":"2026-03-01","day_weather":"sunny","night_weather":"clear",'
-        '"day_temp":20,"night_temp":10,"wind_direction":"east","wind_power":"1"}],'
-        '"days":[{"date":"2026-03-01","day_index":0,"description":"Day 1",'
-        '"transportation":"public transit","accommodation":"budget hotel",'
-        '"hotel":{"name":"Lake Hotel","address":"Hangzhou",'
+        '[{"name":"Lake Hotel","address":"Lake Hotel Source Address",'
         '"location":{"longitude":120.2,"latitude":30.3},"price_range":"200-400",'
-        '"rating":4.5,"distance":"","type":"budget hotel","estimated_cost":300},'
-        '"attractions":[{"name":"West Lake","address":"Hangzhou",'
-        '"location":{"longitude":120.1,"latitude":30.2},"visit_duration":120,'
-        '"description":"lake","category":"scenic","ticket_price":0}],'
-        '"meals":[{"type":"breakfast","name":"Breakfast"},'
-        '{"type":"lunch","name":"Lunch"},{"type":"dinner","name":"Dinner"}]}],'
-        '"overall_suggestions":"Enjoy","budget":{"total_attractions":0,"total_hotels":300,'
-        '"total_meals":150,"total_transportation":50,"total":500}}'
+        '"rating":4.5,"type":"budget hotel","estimated_cost":300}]'
+    )
+    planner_days = [
+        {
+            "date": day_date,
+            "day_index": day_index,
+            "description": f"Day {day_index + 1}",
+            "transportation": "public transit",
+            "accommodation": "budget hotel",
+            "hotel": {
+                "name": "Lake Hotel",
+                "address": "Planner invented hotel address",
+                "location": {"longitude": 1.0, "latitude": 2.0},
+                "price_range": "1-2",
+                "rating": 1.0,
+                "type": "invented",
+                "estimated_cost": 1,
+            },
+            "attractions": [
+                {
+                    "name": "West Lake",
+                    "address": "Planner invented attraction address",
+                    "location": {"longitude": 3.0, "latitude": 4.0},
+                    "visit_duration": 5,
+                    "description": "invented",
+                    "category": "invented",
+                    "ticket_price": 999,
+                    "poi_id": "poi-west",
+                }
+            ],
+            "meals": [
+                {"type": "breakfast", "name": "Breakfast"},
+                {"type": "lunch", "name": "Lunch"},
+                {"type": "dinner", "name": "Dinner"},
+            ],
+        }
+        for day_index, day_date in enumerate(("2026-03-01", "2026-03-02", "2026-03-03"))
+    ]
+    agents["planner"].invoke.return_value = _agent_result(
+        json.dumps(
+            {
+                "city": "Hangzhou",
+                "start_date": "2026-03-01",
+                "end_date": "2026-03-03",
+                "weather_info": [
+                    {
+                        "date": "2026-03-01",
+                        "day_weather": "planner storm",
+                        "day_temp": 99,
+                    }
+                ],
+                "days": planner_days,
+                "overall_suggestions": "Enjoy",
+                "budget": {
+                    "total_attractions": 0,
+                    "total_hotels": 300,
+                    "total_meals": 150,
+                    "total_transportation": 50,
+                    "total": 500,
+                },
+            }
+        )
     )
 
     trip_plan = workflow.plan_trip(_trip_request())
 
+    assert len(trip_plan.days) == 3
     assert trip_plan.days[0].hotel.name == "Lake Hotel"
+    assert trip_plan.days[0].hotel.address == "Lake Hotel Source Address"
+    assert trip_plan.days[0].hotel.location.longitude == 120.2
+    assert trip_plan.days[0].attractions[0].address == "West Lake Source Address"
+    assert trip_plan.days[0].attractions[0].location.longitude == 120.1
+    assert [weather.date for weather in trip_plan.weather_info] == ["2026-03-01", "2026-03-02", "2026-03-03"]
+    assert [weather.day_weather for weather in trip_plan.weather_info] == ["sunny", "cloudy", "sunny"]
     agents["weather"].invoke.assert_called_once()
     agents["hotel"].invoke.assert_called_once()
     agents["planner"].invoke.assert_called_once()
