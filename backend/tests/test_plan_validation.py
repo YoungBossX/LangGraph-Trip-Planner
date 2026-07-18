@@ -170,7 +170,7 @@ def _valid_plan() -> TripPlan:
         for day_index, day_date in enumerate(REQUESTED_DATES)
     ]
     return TripPlan(
-        city="  Hangzhou  ",
+        city="Hangzhou",
         start_date=REQUESTED_DATES[0],
         end_date=REQUESTED_DATES[-1],
         days=days,
@@ -210,6 +210,14 @@ def test_rejects_wrong_plan_identity_fields(workflow, field, value, reason):
     setattr(plan, field, value)
 
     with pytest.raises(ValueError, match=reason):
+        _validate(workflow, plan)
+
+
+def test_rejects_plan_city_with_surrounding_whitespace(workflow):
+    plan = _valid_plan()
+    plan.city = " Hangzhou "
+
+    with pytest.raises(ValueError, match="plan city"):
         _validate(workflow, plan)
 
 
@@ -341,6 +349,15 @@ def test_unknown_supplied_poi_id_does_not_fall_back_to_matching_name(workflow):
     plan.days[0].attractions = [_planner_attraction("West Lake", poi_id="unknown-poi")]
 
     with pytest.raises(ValueError, match="unknown attraction POI ID"):
+        _validate(workflow, plan)
+
+
+@pytest.mark.parametrize("poi_id", ["", "   "], ids=["empty", "whitespace-only"])
+def test_blank_supplied_poi_id_does_not_fall_back_to_matching_name(workflow, poi_id):
+    plan = _valid_plan()
+    plan.days[0].attractions = [_planner_attraction("West Lake", poi_id=poi_id)]
+
+    with pytest.raises(ValueError, match="invalid attraction POI ID"):
         _validate(workflow, plan)
 
 

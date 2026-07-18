@@ -225,6 +225,77 @@ def test_plan_trip_raises_planner_error_after_retry_budget(workflow_and_agents):
     assert agents["planner"].invoke.call_count == 3
 
 
+def test_plan_trip_retries_invariant_invalid_planner_output(workflow_and_agents):
+    workflow, agents = workflow_and_agents
+
+    agents["attraction_search"].invoke.return_value = _agent_result(
+        json.dumps(
+            [
+                {
+                    "name": "West Lake",
+                    "address": "West Lake Source Address",
+                    "location": {"longitude": 120.1, "latitude": 30.2},
+                    "visit_duration": 120,
+                    "description": "lake",
+                    "category": "scenic",
+                    "ticket_price": 0,
+                    "poi_id": "poi-west",
+                }
+            ]
+        )
+    )
+    agents["weather"].invoke.return_value = _agent_result(
+        _weather_response("2026-03-01", "2026-03-02", "2026-03-03")
+    )
+    agents["hotel"].invoke.return_value = _agent_result(
+        json.dumps(
+            [
+                {
+                    "name": "Lake Hotel",
+                    "address": "Lake Hotel Source Address",
+                    "location": {"longitude": 120.2, "latitude": 30.3},
+                    "price_range": "200-400",
+                    "rating": 4.5,
+                    "type": "budget hotel",
+                    "estimated_cost": 300,
+                }
+            ]
+        )
+    )
+    planner_days = [
+        {
+            "date": day_date,
+            "day_index": day_index,
+            "description": f"Day {day_index + 1}",
+            "transportation": "public transit",
+            "accommodation": "budget hotel",
+            "hotel": {"name": "Lake Hotel"},
+            "attractions": [{"name": "West Lake", "poi_id": "poi-west"}],
+            "meals": [
+                {"type": "breakfast", "name": "Breakfast"},
+                {"type": "lunch", "name": "Lunch"},
+                {"type": "dinner", "name": "Dinner"},
+            ],
+        }
+        for day_index, day_date in enumerate(("2026-03-01", "2026-03-02", "2026-03-03"))
+    ]
+    agents["planner"].invoke.return_value = _agent_result(
+        json.dumps(
+            {
+                "city": "Suzhou",
+                "start_date": "2026-03-01",
+                "end_date": "2026-03-03",
+                "days": planner_days,
+            }
+        )
+    )
+
+    with pytest.raises(Exception, match="plan city"):
+        workflow.plan_trip(_trip_request())
+
+    assert agents["planner"].invoke.call_count == 3
+
+
 def test_weather_and_hotels_are_parallel_branches_after_attractions(workflow_and_agents):
     workflow, _ = workflow_and_agents
     from app.workflows.trip_planner_graph import NODE_ATTRACTIONS, NODE_CONTEXT, NODE_HOTELS, NODE_PLAN, NODE_WEATHER

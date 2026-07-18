@@ -800,7 +800,9 @@ class TripPlannerWorkflow:
         source_by_name: Dict[str, tuple[int, Attraction]],
     ) -> tuple[int, Attraction]:
         poi_id = planner_attraction.poi_id
-        if poi_id and poi_id.strip():
+        if poi_id is not None:
+            if not poi_id.strip():
+                raise ValueError("invalid attraction POI ID: value must not be blank")
             resolved = source_by_poi_id.get(poi_id)
             if resolved is None:
                 raise ValueError(f"unknown attraction POI ID: {poi_id}")
@@ -837,10 +839,9 @@ class TripPlannerWorkflow:
     ) -> TripPlan:
         validated_plan = plan.model_copy(deep=True)
 
-        request_city = request.city.strip()
-        if validated_plan.city.strip() != request_city:
+        if validated_plan.city != request.city:
             raise ValueError("plan city must equal request city")
-        validated_plan.city = request_city
+        validated_plan.city = request.city
 
         if validated_plan.start_date != request.start_date:
             raise ValueError("plan start_date must equal request start_date")
