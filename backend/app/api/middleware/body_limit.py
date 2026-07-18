@@ -16,7 +16,9 @@ _TOO_LARGE_BODY = json.dumps(
 ).encode("utf-8")
 
 
-class _RequestBodyOverflow(Exception):
+class _RequestBodyOverflow(BaseException):
+    """Bypass FastAPI's generic request-body Exception-to-400 handler."""
+
     pass
 
 
@@ -59,17 +61,20 @@ class RequestBodyLimitMiddleware:
         try:
             await self.app(scope, receive_with_limit, send_with_state)
         except _RequestBodyOverflow:
-            if not response_started:
-                await self._send_too_large(send)
+            if response_started:
+                raise
+            await self._send_too_large(send)
 
     def _declared_body_is_too_large(self, scope: Scope) -> bool:
         for name, value in scope.get("headers", []):
             if name.lower() != b"content-length":
                 continue
             try:
-                return int(value) > self.max_body_bytes
+                declared_length = int(value)
             except ValueError:
-                return False
+                continue
+            if declared_length > self.max_body_bytes:
+                return True
         return False
 
     @staticmethod
