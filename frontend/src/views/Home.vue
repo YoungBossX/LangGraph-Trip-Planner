@@ -262,11 +262,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { tripPresets, type TripPreset } from '@/data/tripPresets'
-import { generateTripPlanStream } from '@/services/api'
+import { generateTripPlanStream, TripStreamError } from '@/services/api'
+import { createTripRequestLifecycle } from '@/services/tripRequestLifecycle'
 import type { TripFormData } from '@/types'
 import { suggestPresetEndDate } from '@/utils/presetDates'
 import { reconcileSelectedPresetId } from '@/utils/presetSelection'
@@ -294,6 +295,15 @@ const router = useRouter()
 const loading = ref(false)
 const loadingProgress = ref(0)
 const loadingStatus = ref('')
+const requestLifecycle = createTripRequestLifecycle()
+let loadingResetTimer: ReturnType<typeof setTimeout> | undefined
+let navigationTimer: ReturnType<typeof setTimeout> | undefined
+
+onBeforeUnmount(() => {
+  requestLifecycle.cancel()
+  if (loadingResetTimer) clearTimeout(loadingResetTimer)
+  if (navigationTimer) clearTimeout(navigationTimer)
+})
 
 const formData = reactive<TripFormState>({
   city: '',
@@ -387,6 +397,9 @@ const handleSubmit = async () => {
     return
   }
 
+  const requestController = requestLifecycle.begin()
+  if (loadingResetTimer) clearTimeout(loadingResetTimer)
+  if (navigationTimer) clearTimeout(navigationTimer)
   loading.value = true
   loadingProgress.value = 0
   loadingStatus.value = '正在准备行程请求'
@@ -413,6 +426,7 @@ const handleSubmit = async () => {
     }
 
     const response = await generateTripPlanStream(requestData, (step, msg) => {
+      if (requestController.signal.aborted) return
       const info = progressMap[step]
       if (info) {
         loadingProgress.value = info.pct
@@ -420,7 +434,9 @@ const handleSubmit = async () => {
       } else {
         loadingStatus.value = msg
       }
-    })
+    }, { signal: requestController.signal })
+
+    if (requestController.signal.aborted) return
 
     loadingProgress.value = 100
     loadingStatus.value = '行程已生成'
@@ -428,14 +444,17 @@ const handleSubmit = async () => {
     if (response.success && response.data) {
       sessionStorage.setItem('tripPlan', JSON.stringify(response.data))
       message.success('旅行计划生成成功')
-      setTimeout(() => { router.push('/result') }, 500)
+      navigationTimer = setTimeout(() => { router.push('/result') }, 500)
     } else {
       message.error(response.message || '生成失败')
     }
-  } catch (error: any) {
-    message.error(error.message || '生成旅行计划失败，请稍后重试')
+  } catch (error: unknown) {
+    if (requestController.signal.aborted) return
+    if (error instanceof TripStreamError && error.code === 'TRIP_CANCELLED') return
+    message.error(error instanceof Error ? error.message : '生成旅行计划失败，请稍后重试')
   } finally {
-    setTimeout(() => {
+    if (!requestLifecycle.finish(requestController)) return
+    loadingResetTimer = setTimeout(() => {
       loading.value = false
       loadingProgress.value = 0
       loadingStatus.value = ''

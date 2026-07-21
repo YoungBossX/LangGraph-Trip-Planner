@@ -3,6 +3,26 @@ import type { TripFormData, TripPlanResponse } from '@/types'
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/+$/, '')
 
+const DEFAULT_ABSOLUTE_TIMEOUT_MS = 310_000
+const DEFAULT_INACTIVITY_TIMEOUT_MS = 45_000
+
+export interface TripStreamOptions {
+  signal?: AbortSignal
+  absoluteTimeoutMs?: number
+  inactivityTimeoutMs?: number
+}
+
+export class TripStreamError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly retryAfter?: number,
+  ) {
+    super(message)
+    this.name = 'TripStreamError'
+  }
+}
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 650000, // 约5.8分钟超时
@@ -42,23 +62,52 @@ apiClient.interceptors.response.use(
  */
 export async function generateTripPlanStream(
   formData: TripFormData,
-  onProgress: (step: string, message: string) => void
+  onProgress: (step: string, message: string) => void,
+  options: TripStreamOptions = {},
 ): Promise<TripPlanResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/trip/plan-stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(formData),
-  })
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-  }
-
-  const reader = response.body?.getReader()
-  if (!reader) throw new Error('响应体不支持流式读取')
-
+  const controller = new AbortController()
+  const absoluteTimeoutMs = options.absoluteTimeoutMs ?? DEFAULT_ABSOLUTE_TIMEOUT_MS
+  const inactivityTimeoutMs = options.inactivityTimeoutMs ?? DEFAULT_INACTIVITY_TIMEOUT_MS
+  let abortKind: 'external' | 'timeout' | null = null
+  let absoluteTimer: ReturnType<typeof setTimeout> | undefined
+  let inactivityTimer: ReturnType<typeof setTimeout> | undefined
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   const decoder = new TextDecoder()
   let buffer = ''
+
+  const abort = (kind: 'external' | 'timeout') => {
+    if (controller.signal.aborted) return
+    abortKind = kind
+    controller.abort()
+  }
+
+  const externalAbort = () => abort('external')
+  if (options.signal?.aborted) externalAbort()
+  else options.signal?.addEventListener('abort', externalAbort, { once: true })
+
+  const resetInactivityTimer = () => {
+    if (inactivityTimer) clearTimeout(inactivityTimer)
+    inactivityTimer = setTimeout(() => abort('timeout'), inactivityTimeoutMs)
+  }
+
+  absoluteTimer = setTimeout(() => abort('timeout'), absoluteTimeoutMs)
+  resetInactivityTimer()
+
+  let rejectAbort: ((error: TripStreamError) => void) | undefined
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject
+  })
+  const onInternalAbort = () => {
+    rejectAbort?.(
+      abortKind === 'external'
+        ? new TripStreamError('TRIP_CANCELLED', 'Trip request was cancelled.')
+        : new TripStreamError('TRIP_TIMEOUT', 'Trip planning timed out. Please try again.'),
+    )
+  }
+  controller.signal.addEventListener('abort', onInternalAbort, { once: true })
+  if (controller.signal.aborted) onInternalAbort()
+
+  const withAbort = <T>(promise: Promise<T>): Promise<T> => Promise.race([promise, abortPromise])
 
   const processFrame = (frame: string): TripPlanResponse | null => {
     let eventType = 'message'
@@ -85,33 +134,92 @@ export async function generateTripPlanStream(
       return data as TripPlanResponse
     }
     if (eventType === 'error') {
-      throw new Error(data.message || '生成失败')
+      throw new TripStreamError(data.code || 'TRIP_FAILED', data.message || 'Trip planning failed.')
     }
 
     return null
   }
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+  try {
+    const response = await withAbort(fetch(`${API_BASE_URL}/api/trip/plan-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData),
+      signal: controller.signal,
+    }))
 
-    buffer += decoder.decode(value, { stream: true })
-    const frames = buffer.split(/\r?\n\r?\n/)
-    buffer = frames.pop() || ''
+    if (!response.ok) {
+      let detail: { code?: string; message?: string } = {}
+      try {
+        const payload = await withAbort(response.json())
+        detail = payload?.detail || {}
+      } catch (error) {
+        if (error instanceof TripStreamError) throw error
+        // Fall back to the HTTP status when the response body is not JSON.
+      }
+      const retryAfterHeader = response.headers.get('Retry-After')
+      const parsedRetryAfter = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : Number.NaN
+      throw new TripStreamError(
+        detail.code || `HTTP_${response.status}`,
+        detail.message || `HTTP ${response.status}: ${response.statusText}`,
+        Number.isFinite(parsedRetryAfter) ? parsedRetryAfter : undefined,
+      )
+    }
 
-    for (const frame of frames) {
-      const result = processFrame(frame)
+    reader = response.body?.getReader()
+    if (!reader) throw new TripStreamError('TRIP_FAILED', 'Streaming response is unavailable.')
+
+    while (true) {
+      const { done, value } = await withAbort(reader.read())
+      if (done) break
+
+      resetInactivityTimer()
+      buffer += decoder.decode(value, { stream: true })
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() || ''
+
+      for (const frame of frames) {
+        const result = processFrame(frame)
+        if (result) return result
+      }
+    }
+
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      const result = processFrame(buffer)
       if (result) return result
     }
-  }
 
-  buffer += decoder.decode()
-  if (buffer.trim()) {
-    const result = processFrame(buffer)
-    if (result) return result
+    throw new TripStreamError('TRIP_FAILED', 'Streaming response ended without a result.')
+  } catch (error) {
+    if (error instanceof TripStreamError) throw error
+    if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+      throw abortKind === 'external'
+        ? new TripStreamError('TRIP_CANCELLED', 'Trip request was cancelled.')
+        : new TripStreamError('TRIP_TIMEOUT', 'Trip planning timed out. Please try again.')
+    }
+    throw new TripStreamError(
+      'TRIP_FAILED',
+      error instanceof Error ? error.message : 'Trip planning failed.',
+    )
+  } finally {
+    if (absoluteTimer) clearTimeout(absoluteTimer)
+    if (inactivityTimer) clearTimeout(inactivityTimer)
+    options.signal?.removeEventListener('abort', externalAbort)
+    controller.signal.removeEventListener('abort', onInternalAbort)
+    if (reader) {
+      try {
+        await reader.cancel()
+      } catch {
+        // Cleanup failures must not replace the request outcome.
+      }
+      try {
+        reader.releaseLock()
+      } catch {
+        // Cleanup failures must not replace the request outcome.
+      }
+    }
   }
-
-  throw new Error('流式响应未返回结果')
 }
 
 /**
